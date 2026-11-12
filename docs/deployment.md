@@ -1,32 +1,27 @@
-# Deployment preparation
+# Deployment
 
-The application is complete for local review. Final buyer-approved PayPal validation and external hosting setup are deferred by the owner. No production deploy or main merge has been authorized.
+## Current hosting (Vercel + Neon)
 
-## Native Render service
+- URL: https://entrega-segura-app.vercel.app (`entrega-segura.vercel.app` belongs to someone else). The domain is attached to the Vercel project `entrega-segura`, so every `vercel deploy --prod` moves it automatically.
+- `vercel.json` pins the Next.js framework preset and region `iad1`.
+- Ledger: Neon Postgres (`aws-us-east-1`). `DATABASE_URL` (pooled) for queries, `DATABASE_URL_UNPOOLED` for per-reservation advisory locks. Tables are created on first use; see `lib/store.ts`.
+- Production env vars: `PAYPAL_ENV=sandbox`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `OPENAI_API_KEY`, `DEEPINFRA_API_KEY`, `SESSION_SECRET`, `APP_URL`, `DATABASE_URL`, `DATABASE_URL_UNPOOLED`. The Pascal merchant variables (`SHOP_*`, `PASCAL_DEMO_URL`) are not set, so the Pascal integration routes answer 401 on the hosted demo.
+- Vercel deployment protection (SSO) is disabled for this project so judges can open it.
 
-Use the included `render.yaml`: Node 22.19+, build `npm ci && npm run build`, start `npm start`, health path `/api/health`. Automatic deployments are disabled in the blueprint. Set APP_URL, SESSION_SECRET and sandbox/AI credentials in Render's environment. Configure the merchant API/callback secrets only when connecting the separately approved Pascal deployment.
+Redeploy: `vercel deploy --prod --yes`.
 
-The free service's filesystem is ephemeral, and sleeping instances cannot continuously monitor expiry. For reliable ledger state and scheduled maintenance, select an awake single instance with a persistent disk and configure STORE_DIR to its mount. Do not describe free ephemeral storage as durable. No paid plan has been provisioned by this work.
+## Webhook
 
-## Container alternative
+1. `APP_URL=https://entrega-segura-app.vercel.app npm run webhook:register` (registered id `7YN52330AD573344H`).
+2. Put the id in the Vercel env as `PAYPAL_WEBHOOK_ID` and redeploy.
+3. Proof: `APP_URL=… PAYPAL_WEBHOOK_ID=… DATABASE_URL=… npm run webhook:proof` → `reports/webhook-proof.json`.
 
-The included Dockerfile uses Node 22, a non-root runtime user and `/app/data` as a volume. Its build context excludes .env, local data, Git and reports. Build/run only when the owner chooses to use this route:
+The sandbox sometimes delivers events many minutes late. When an order polled from `/judge` is resolved and still has no verified webhook after 15 s, the server asks PayPal once to resend its own event for that order (`POST /v1/notifications/webhooks-events/{id}/resend`). The resent delivery is signed by PayPal and verified like any other.
 
-```sh
-docker build -t entrega-segura .
-docker run --rm -p 3025:3025 --env-file .env -v entrega-ledger:/app/data entrega-segura
-```
+## Maintenance
 
-Docker was not available in the implementation environment; the container recipe has not been executed. The regular Next production build is checked separately.
+Off on Vercel (no long-running process). For scheduled reconciliation/reauthorization set `MAINTENANCE_SECRET` and call `POST /api/internal/maintenance` with `Authorization: Bearer <secret>` from an external scheduler. It never captures money because a timer fired.
 
-## Webhook and maintenance activation
+## Alternatives kept in the repo
 
-1. Complete final sandbox buyer approval and the partial/final-capture compatibility check. If needed, use the implemented two-order strategy.
-2. Host the approved version on an HTTPS origin; set APP_URL to that exact origin.
-3. Run `npm run webhook:register`, then set PAYPAL_WEBHOOK_ID in the host environment as well.
-4. Receive a genuine payment notification and retain its real `verification_status: SUCCESS` evidence. A mock postback is not acceptable proof.
-5. Choose PAYPAL_CAPTURE_STRATEGY, then enable MAINTENANCE_ENABLED=true after the account validation. The scheduler reconciles eligible orders and retries the outbox. It never captures money just because a timer fired.
-6. For an external scheduler, set a strong MAINTENANCE_SECRET and POST to `/api/internal/maintenance` using its bearer header. Do not put the secret in a URL. The endpoint is disabled without that secret.
-7. Configure Pascal's opt-in demo and the matching server-only credentials on its own approved deployment. Do not point it at commercial orders, databases or WhatsApp.
-
-Stop local test servers when testing ends. Never manually deploy Pascal to Vercel; its existing main integration and the owner's merge authorization remain the applicable production path.
+`render.yaml` (Render web service) and the `Dockerfile` (Node 22, non-root, `/app/data` volume for SQLite) were prepared earlier and not used. Without `DATABASE_URL` the app falls back to SQLite under `STORE_DIR`, which needs a persistent disk and a single instance.
