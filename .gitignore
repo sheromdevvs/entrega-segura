@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+.data/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+LOCAL_HANDOFF.md

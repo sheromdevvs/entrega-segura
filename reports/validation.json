@@ -1,0 +1,29 @@
+{
+  "at": "2026-11-12T05:41:13.513753+00:00",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "deterministicTestsPassed": 35,
+  "realSandboxApiTestsPassed": 8,
+  "buyerApprovedLifecycleTestsSkipped": 3,
+  "localIntegrationChecks": {
+    "passed": 17,
+    "total": 17
+  },
+  "textParser": {
+    "correct": 22,
+    "total": 24,
+    "accuracy": 0.9166666666666666
+  },
+  "syntheticAudioSmoke": "passed",
+  "fictionalImageSmoke": "passed",
+  "pending": [
+    "buyer-approved partial and final captures",
+    "real sandbox void/refund lifecycle scenarios",
+    "real aged authorization reauthorization",
+    "real account payout",
+    "deployed HTTPS webhook verification SUCCESS",
+    "hosted URL",
+    "owner-authorized main merges"
+  ],
+  "productionChanges": false
+}

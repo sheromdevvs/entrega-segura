@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: entrega-segura-sandbox
+    runtime: node
+    plan: free
+    autoDeployTrigger: "off"
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.19.0
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: STORE_DIR
+        value: .data
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: DEEPINFRA_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+# Free service storage is ephemeral. Use a persistent disk and one instance
+# for durable demo state, after the owner selects the hosting configuration.

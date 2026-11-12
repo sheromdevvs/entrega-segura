@@ -1,0 +1,83 @@
+{
+  "at": "2026-11-12T05:40:08.036Z",
+  "scope": "Local applications, real sandbox order creation and AI; no buyer-approved captures or real PayPal webhook verification in this check.",
+  "passed": 18,
+  "total": 18,
+  "results": [
+    {
+      "name": "Entrega health",
+      "passed": true
+    },
+    {
+      "name": "Private Pascal checkout page serves",
+      "passed": true
+    },
+    {
+      "name": "Create real sandbox checkout via guest session",
+      "passed": true,
+      "detail": "905201642Y647512E"
+    },
+    {
+      "name": "Other guest cannot read order",
+      "passed": true
+    },
+    {
+      "name": "Other guest cannot mutate or recover order in error body",
+      "passed": true
+    },
+    {
+      "name": "Cross-origin writes rejected",
+      "passed": true
+    },
+    {
+      "name": "Unapproved buyer cannot trigger deposit",
+      "passed": true
+    },
+    {
+      "name": "Integration requires server credential",
+      "passed": true
+    },
+    {
+      "name": "Authenticated Pascal integration creates checkout",
+      "passed": true,
+      "detail": "ES-90A4C4118D33BE58"
+    },
+    {
+      "name": "Integration retry returns same reservation",
+      "passed": true
+    },
+    {
+      "name": "Signed claim assigns checkout to browser",
+      "passed": true
+    },
+    {
+      "name": "Claim cannot be stolen by another browser",
+      "passed": true
+    },
+    {
+      "name": "Claimed browser can read its reservation",
+      "passed": true
+    },
+    {
+      "name": "Pascal reads authoritative payment status by API",
+      "passed": true
+    },
+    {
+      "name": "Pascal accepts authenticated integration callback",
+      "passed": true
+    },
+    {
+      "name": "Pascal rejects forged callback",
+      "passed": true
+    },
+    {
+      "name": "Unsigned PayPal webhook rejected",
+      "passed": true
+    },
+    {
+      "name": "Live AI parsing routes through gate without charging unapproved order",
+      "passed": true,
+      "detail": "DeepInfra / meta-llama/Llama-3.3-70B-Instruct"
+    }
+  ]
+}

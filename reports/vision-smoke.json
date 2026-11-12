@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-12T05:38:14.143Z",
+  "source": "Locally drawn fictional cracked-mug illustration, not a real customer photo",
+  "expected": "defect_reported",
+  "kind": "defect_reported",
+  "explanation": "El cliente reporta que la taza llegó con una grieta y solicita revisión.",
+  "reply": "Estimado/a, hemos recibido su reporte sobre la taza con grieta. Procederemos a revisar el caso y le contactaremos pronto para resolverlo.",
+  "provider": "OpenAI",
+  "model": "gpt-4.1-mini",
+  "passed": true,
+  "scope": "One model/attachment smoke check only; not an image accuracy benchmark."
+}

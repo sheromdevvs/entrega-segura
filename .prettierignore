@@ -1,0 +1,8 @@
+.next
+.data
+node_modules
+package-lock.json
+reports
+.env
+.env.*
+LOCAL_HANDOFF.md

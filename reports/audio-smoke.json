@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-12T05:37:47.583Z",
+  "source": "Locally synthesized fictional Spanish courier note (macOS Paulina voice)",
+  "expected": "No había nadie en casa. Dejé un aviso y vuelvo mañana.",
+  "httpStatus": 200,
+  "text": "No había nadie en casa. Dejé un aviso y vuelvo mañana.",
+  "model": "whisper-1",
+  "provider": "OpenAI",
+  "scope": "One smoke check only; not an audio accuracy benchmark."
+}
