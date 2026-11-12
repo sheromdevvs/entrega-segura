@@ -13,16 +13,20 @@
     "webhook:register": "tsx --env-file=.env scripts/register-webhook.ts",
     "test:sandbox": "RUN_SANDBOX_TESTS=1 node --env-file=.env node_modules/vitest/vitest.mjs run",
     "format": "prettier --write .",
-    "maintenance": "tsx --env-file=.env scripts/maintenance.ts"
+    "maintenance": "tsx --env-file=.env scripts/maintenance.ts",
+    "sandbox:e2e": "tsx --env-file=.env scripts/sandbox-e2e.ts",
+    "webhook:proof": "tsx --env-file=.env scripts/webhook-proof.ts"
   },
   "dependencies": {
     "next": "16.4.6",
+    "pg": "^8.23.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "fast-check": "^4.0.0",

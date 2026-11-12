@@ -18,7 +18,7 @@ const enabled =
 describe.skipIf(!enabled)("real PayPal Sandbox (network, no mocks)", () => {
   let order: Reservation;
   beforeAll(async () => {
-    const r = createOrder("integration-test");
+    const r = await createOrder("integration-test");
     order = await hold({
       orderRef: r.ref,
       total: r.total,
@@ -89,7 +89,7 @@ describe.skipIf(!enabled)("real PayPal Sandbox (network, no mocks)", () => {
     );
   });
   it("creates another independent sandbox order", async () => {
-    const r = createOrder("integration-test", "mug");
+    const r = await createOrder("integration-test", "mug");
     const d = await hold({
       orderRef: r.ref,
       total: r.total,
@@ -100,32 +100,84 @@ describe.skipIf(!enabled)("real PayPal Sandbox (network, no mocks)", () => {
     console.log("SECOND PAYPAL ID", d.paypalOrderId);
   });
 });
-const approved = enabled && !!process.env.SANDBOX_APPROVED_ORDER_ID;
-describe.skipIf(!approved)(
-  "approved sandbox lifecycle (requires externally approved PayPal order)",
+// Buyer = PayPal's published sandbox test card (Orders v2 payment_source.card),
+// so the full money lifecycle runs without a browser approval.
+describe.skipIf(!enabled)(
+  "card-funded sandbox lifecycle (real captures, void, refund)",
   () => {
-    it("authorizes and partially captures deposit", async () => {
-      const ref = process.env.SANDBOX_APPROVED_ORDER_ID!;
-      const r = await completeApproval({ orderRef: ref });
-      expect(r.captures[0].status).toBe("COMPLETED");
-      console.log("DEPOSIT", r.captures[0].id);
-    });
-    it("captures remaining balance with final_capture true", async () => {
-      const r = await release({
-        orderRef: process.env.SANDBOX_APPROVED_ORDER_ID!,
+    let ref: string;
+    async function cardOrder(productId = "hoodie") {
+      const r = await createOrder(
+        "integration-test",
+        productId,
+        "judge",
+        undefined,
+        "single",
+        "sandbox_card",
+      );
+      await hold({
+        orderRef: r.ref,
+        total: r.total,
+        depositNow: r.deposit,
+        currency: r.currency,
       });
+      return r.ref;
+    }
+    it("authorizes the full amount and captures the deposit with final_capture false", async () => {
+      ref = await cardOrder();
+      const r = await completeApproval({ orderRef: ref });
+      expect(r.state).toBe("held");
+      expect(r.captures).toHaveLength(1);
+      expect(r.captures[0]).toMatchObject({
+        role: "deposit",
+        status: "COMPLETED",
+        amount: 1200,
+      });
+      const auth = await api(
+        `/v2/payments/authorizations/${r.authorizationId}`,
+      );
+      expect(auth.status).toBe("PARTIALLY_CAPTURED");
+      console.log("AUTH", r.authorizationId, "DEPOSIT", r.captures[0].id);
+    });
+    it("captures the remaining balance with final_capture true", async () => {
+      const r = await release({ orderRef: ref });
       expect(r.state).toBe("released");
+      const auth = await api(
+        `/v2/payments/authorizations/${r.authorizationId}`,
+      );
+      expect(auth.status).toBe("CAPTURED");
       console.log("BALANCE", r.captures.find((x) => x.role === "balance")?.id);
     });
-    it("repeated release preserves one balance capture", async () => {
-      const ref = process.env.SANDBOX_APPROVED_ORDER_ID!;
+    it("repeated concurrent release preserves one balance capture", async () => {
       await Promise.all([
         release({ orderRef: ref }),
         release({ orderRef: ref }),
       ]);
       expect(
-        get(ref).captures.filter((x) => x.role === "balance"),
+        (await get(ref)).captures.filter((x) => x.role === "balance"),
       ).toHaveLength(1);
+    });
+    it("refusal voids the remaining authorization and keeps the deposit", async () => {
+      const voidRef = await cardOrder("mug");
+      await completeApproval({ orderRef: voidRef });
+      const r = await cancel({ orderRef: voidRef });
+      expect(r.state).toBe("voided");
+      const auth = await api(
+        `/v2/payments/authorizations/${r.authorizationId}`,
+      );
+      expect(auth.status).toBe("VOIDED");
+      console.log("VOIDED", r.authorizationId);
+    });
+    it("refunds part of a completed capture exactly once", async () => {
+      const r1 = await refund({
+        orderRef: ref,
+        amount: 300,
+        reason: "Sandbox test",
+      });
+      const r2 = await refund({ orderRef: ref, amount: 300, reason: "Retry" });
+      expect(r1.refunds).toHaveLength(1);
+      expect(r2.refunds[0].id).toBe(r1.refunds[0].id);
+      console.log("REFUND", r1.refunds[0].id, r1.refunds[0].status);
     });
   },
 );

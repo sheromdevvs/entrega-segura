@@ -5,7 +5,7 @@ import { get } from "../lib/store";
 async function main() {
   const ref = process.argv[2];
   if (!ref) {
-    const r = createOrder("local-probe");
+    const r = await createOrder("local-probe");
     const order = await hold({
       orderRef: r.ref,
       total: r.total,

@@ -13,11 +13,11 @@ export async function GET(req: Request) {
       .update(`${ref}:${claim}:${expires}`)
       .digest("hex");
     if (!equal(sig, expected)) throw new Error("Invalid link");
-    const r = get(ref);
+    const r = await get(ref);
     if (!Number.isFinite(Number(expires)) || Date.now() > Number(expires))
       throw new Error("Link expired");
     const owner = await session();
-    if (r.owner !== owner && !assignOwner(ref, `claim:${claim}`, owner))
+    if (r.owner !== owner && !(await assignOwner(ref, `claim:${claim}`, owner)))
       throw new Error("Link already claimed");
     return NextResponse.redirect(
       new URL(

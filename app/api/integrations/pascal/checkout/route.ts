@@ -24,14 +24,14 @@ export async function POST(req: Request) {
     const body = schema.parse(await req.json());
     return await locked(`merchant:${body.merchantRef}`, async () => {
       const r =
-        byMerchantRef(body.merchantRef) ||
-        createOrder(
+        (await byMerchantRef(body.merchantRef)) ||
+        (await createOrder(
           "pascal-server",
           body.productId,
           "pascal",
           body.merchantRef,
           body.paymentStrategy,
-        );
+        ));
       await hold({
         orderRef: r.ref,
         total: r.total,
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       const sig = createHmac("sha256", process.env.SESSION_SECRET!)
         .update(`${r.ref}:${claim}:${expires}`)
         .digest("hex");
-      save({ ...get(r.ref), owner: `claim:${claim}` });
+      await save({ ...(await get(r.ref)), owner: `claim:${claim}` });
       return NextResponse.json({
         orderRef: r.ref,
         checkoutUrl: `${origin}/api/integrations/pascal/claim?ref=${r.ref}&claim=${claim}&expires=${expires}&sig=${sig}`,

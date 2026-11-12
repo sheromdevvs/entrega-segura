@@ -58,6 +58,8 @@ export type Reservation = {
   source: "judge" | "pascal";
   merchantRef?: string;
   paymentStrategy?: "single" | "split";
+  /** approval_link = buyer approves in PayPal; sandbox_card = PayPal's published sandbox test card, no browser (judge one-click path). */
+  buyerMethod?: "approval_link" | "sandbox_card";
   depositOrderId?: string;
   depositApprovalUrl?: string;
   balanceApprovalUrl?: string;
@@ -101,6 +103,7 @@ export type Reservation = {
     at: string;
   };
   lastError?: string;
+  webhookNudgedAt?: string;
   refundIntent?: number;
   payout?: Record<string, unknown>;
 };

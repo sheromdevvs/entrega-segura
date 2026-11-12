@@ -1,3 +1,4 @@
+import { usingPostgres } from "@/lib/store";
 export async function GET() {
   return Response.json({
     ok: true,
@@ -8,5 +9,6 @@ export async function GET() {
       process.env.DEEPINFRA_API_KEY || process.env.OPENAI_API_KEY
     ),
     webhookConfigured: !!process.env.PAYPAL_WEBHOOK_ID,
+    storage: usingPostgres() ? "postgres" : "sqlite",
   });
 }

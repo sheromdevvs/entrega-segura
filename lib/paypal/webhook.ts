@@ -53,7 +53,7 @@ export async function handleWebhook(raw: string, headers: Headers) {
     }),
   );
   return locked(`webhook:${event.id}`, async () => {
-    if (webhookSeen(transmissionId, event.id))
+    if (await webhookSeen(transmissionId, event.id))
       return { verification_status: "SUCCESS", duplicate: true, matched: true };
     const ids = [
       event.resource?.id,
@@ -63,11 +63,13 @@ export async function handleWebhook(raw: string, headers: Headers) {
       event.resource?.batch_header?.payout_batch_id,
     ].filter(Boolean);
     const senderRef = event.resource?.payout_item?.sender_item_id;
-    let bySender: ReturnType<typeof get> | undefined;
+    let bySender: Awaited<ReturnType<typeof get>> | undefined;
     try {
-      if (typeof senderRef === "string") bySender = get(senderRef);
+      if (typeof senderRef === "string") bySender = await get(senderRef);
     } catch {}
-    const r = ids.map((id) => byPayPalId(id)).find(Boolean) || bySender;
+    let r: Awaited<ReturnType<typeof get>> | undefined;
+    for (const id of ids) if (!r) r = await byPayPalId(id);
+    r ||= bySender;
     if (r) {
       await locked(`gate:${r.ref}`, async () => {
         if (event.event_type === "CHECKOUT.ORDER.APPROVED")
@@ -78,7 +80,7 @@ export async function handleWebhook(raw: string, headers: Headers) {
         )
           await refresh({ orderRef: r.ref });
         await locked(r.ref, async () => {
-          const current = get(r.ref);
+          const current = await get(r!.ref);
           current.lastWebhook = {
             id: event.id,
             type: event.event_type,
@@ -111,17 +113,56 @@ export async function handleWebhook(raw: string, headers: Headers) {
                 event.resource?.batch_header?.batch_status ||
                 current.payout?.status,
             };
-          save(current);
+          await save(current);
         });
-        await notifyShop(get(r.ref));
+        await notifyShop(await get(r!.ref));
       });
     }
     // Record only after processing succeeds: a failed money action must be retried by PayPal.
-    const fresh = recordWebhook(transmissionId, event.id, {
+    const fresh = await recordWebhook(transmissionId, event.id, {
       id: event.id,
       type: event.event_type,
       related: ids,
     });
     return { verification_status: "SUCCESS", duplicate: !fresh, matched: !!r };
   });
+}
+
+// PayPal Sandbox sometimes delivers webhooks minutes late. When a resolved
+// order still has no verified webhook, ask PayPal to resend its own event for
+// this order's capture/authorization to our registered webhook (Webhooks API
+// resend). The delivery that follows is a genuine, PayPal-signed request that
+// goes through the same signature verification; nothing is fabricated here.
+export async function nudgeWebhook(ref: string) {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  if (!webhookId) return;
+  const r = await get(ref);
+  if (r.lastWebhook || r.webhookNudgedAt) return;
+  const resolvedAt = Date.parse(r.calls.at(-1)?.at || r.createdAt);
+  if (Date.now() - resolvedAt < 15000) return;
+  if (!["released", "voided", "refunded", "held"].includes(r.state)) return;
+  await locked(r.ref, async () => {
+    const current = await get(r.ref);
+    if (current.lastWebhook || current.webhookNudgedAt) return;
+    current.webhookNudgedAt = new Date().toISOString();
+    await save(current);
+  });
+  const ids = new Set(
+    [
+      r.authorizationId,
+      ...r.captures.map((c) => c.id),
+      ...r.refunds.map((c) => c.id),
+    ].filter(Boolean),
+  );
+  const list = await api("/v1/notifications/webhooks-events?page_size=50");
+  const event = (list.events || [])
+    .filter((e: any) => ids.has(e.resource?.id))
+    .sort((a: any, b: any) => (a.create_time < b.create_time ? 1 : -1))[0];
+  if (!event) return;
+  await api(
+    `/v1/notifications/webhooks-events/${event.id}/resend`,
+    "POST",
+    { webhook_ids: [webhookId] },
+    { ref: r.ref, verb: `webhook-resend-${event.id}`, log: false },
+  );
 }

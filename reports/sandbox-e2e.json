@@ -1,0 +1,590 @@
+{
+  "generatedAt": "2026-11-12T09:20:25.408Z",
+  "environment": "PayPal Sandbox (api-m.sandbox.paypal.com), US sandbox business account",
+  "buyer": "PayPal sandbox test card 4012000077777777 as Orders v2 payment_source.card (no browser). The hosted human flow uses the PayPal approval link instead.",
+  "courier": "LAAR is simulated (no API access yet); delivery code check is real code",
+  "storage": "Postgres (Neon)",
+  "passed": 6,
+  "failed": 0,
+  "results": [
+    {
+      "scenario": "delivered",
+      "ok": true,
+      "ms": 20294,
+      "orderRef": "ES-C5865517160BE9D5",
+      "finalState": "released",
+      "paypal": {
+        "order": "9GA51186MN289643N",
+        "authorization": "37M693238M146131R",
+        "captures": [
+          {
+            "id": "8WG56307DG908532N",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "deposit"
+          },
+          {
+            "id": "27J97872DJ7024347",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "balance"
+          }
+        ],
+        "refunds": []
+      },
+      "decisions": [
+        "release",
+        "wait"
+      ],
+      "steps": [
+        {
+          "step": "Order created with intent AUTHORIZE (sandbox test card as buyer)",
+          "result": "9GA51186MN289643N for $24.00",
+          "ids": {
+            "order": "9GA51186MN289643N",
+            "debugId": "f929100fdd54e"
+          }
+        },
+        {
+          "step": "Full amount authorized; 50% deposit captured with final_capture=false",
+          "result": "deposit $12.00 COMPLETED; balance stays authorized",
+          "ids": {
+            "authorization": "37M693238M146131R",
+            "depositCapture": "8WG56307DG908532N",
+            "debugId": "f507848fe3c6a"
+          }
+        },
+        {
+          "step": "Courier confirms delivery with the buyer's 4-digit code",
+          "decision": "release",
+          "result": "balance $12.00 captured with final_capture=true (COMPLETED)",
+          "ids": {
+            "balanceCapture": "27J97872DJ7024347",
+            "debugId": "f658976d69443"
+          }
+        },
+        {
+          "step": "Same delivery confirmation arrives again",
+          "decision": "wait",
+          "result": "1 balance capture in total"
+        }
+      ],
+      "calls": [
+        {
+          "at": "2026-11-12T09:18:46.253Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "f443478fa5fa3",
+          "requestId": "e92d5ce06db1cb8e5bed777952e070388a27a2"
+        },
+        {
+          "at": "2026-11-12T09:18:48.419Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/9GA51186MN289643N",
+          "status": 200,
+          "debugId": "f929100fdd54e"
+        },
+        {
+          "at": "2026-11-12T09:18:51.729Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/37M693238M146131R/capture",
+          "status": 201,
+          "debugId": "f507848fe3c6a",
+          "requestId": "b857ca72245b0aa5ec160b10594c32b9168bbd"
+        },
+        {
+          "at": "2026-11-12T09:18:56.615Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/37M693238M146131R/capture",
+          "status": 201,
+          "debugId": "f658976d69443",
+          "requestId": "f61c9a78c39e9d3271c8dab27cc40bd71a5f9f"
+        }
+      ]
+    },
+    {
+      "scenario": "refused",
+      "ok": true,
+      "ms": 14814,
+      "orderRef": "ES-0F4EF3F7CA646D30",
+      "finalState": "voided",
+      "paypal": {
+        "order": "9Y154559B48424521",
+        "authorization": "4H391159H5245732V",
+        "captures": [
+          {
+            "id": "2BC783505L887032K",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "deposit"
+          }
+        ],
+        "refunds": []
+      },
+      "decisions": [
+        "cancel"
+      ],
+      "steps": [
+        {
+          "step": "Order created with intent AUTHORIZE (sandbox test card as buyer)",
+          "result": "9Y154559B48424521 for $24.00",
+          "ids": {
+            "order": "9Y154559B48424521",
+            "debugId": "f9014311b7304"
+          }
+        },
+        {
+          "step": "Full amount authorized; 50% deposit captured with final_capture=false",
+          "result": "deposit $12.00 COMPLETED; balance stays authorized",
+          "ids": {
+            "authorization": "4H391159H5245732V",
+            "depositCapture": "2BC783505L887032K",
+            "debugId": "f86307678bd9f"
+          }
+        },
+        {
+          "step": "Buyer refuses the parcel at the door",
+          "decision": "cancel",
+          "result": "remaining authorization voided; PayPal now reports VOIDED; deposit kept as disclosed",
+          "ids": {
+            "authorization": "4H391159H5245732V",
+            "debugId": "f77695342d8fc"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "at": "2026-11-12T09:19:03.071Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "f6209200f22a6",
+          "requestId": "b8c7df5d8a13037079f919e0ffdb4838d81ff4"
+        },
+        {
+          "at": "2026-11-12T09:19:04.822Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/9Y154559B48424521",
+          "status": 200,
+          "debugId": "f9014311b7304"
+        },
+        {
+          "at": "2026-11-12T09:19:07.887Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/4H391159H5245732V/capture",
+          "status": 201,
+          "debugId": "f86307678bd9f",
+          "requestId": "93e12d7e0635b190ba915e98b1a3c89b48c303"
+        },
+        {
+          "at": "2026-11-12T09:19:11.574Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/4H391159H5245732V/void",
+          "status": 200,
+          "debugId": "f77695342d8fc",
+          "requestId": "0510596e8768f4b824918f6115bd607d0ab7d1"
+        },
+        {
+          "at": "2026-11-12T09:19:13.135Z",
+          "method": "GET",
+          "path": "/v2/payments/authorizations/4H391159H5245732V",
+          "status": 200,
+          "debugId": "f508215b97c32"
+        }
+      ]
+    },
+    {
+      "scenario": "not_home_twice",
+      "ok": true,
+      "ms": 13336,
+      "orderRef": "ES-EA4ED79A78997AF7",
+      "finalState": "held",
+      "paypal": {
+        "order": "8BA82633PL447743K",
+        "authorization": "59L63985PT081594R",
+        "captures": [
+          {
+            "id": "08G671192S6668029",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "deposit"
+          }
+        ],
+        "refunds": []
+      },
+      "decisions": [
+        "wait",
+        "ask_shop"
+      ],
+      "steps": [
+        {
+          "step": "Order created with intent AUTHORIZE (sandbox test card as buyer)",
+          "result": "8BA82633PL447743K for $24.00",
+          "ids": {
+            "order": "8BA82633PL447743K",
+            "debugId": "f854227a07980"
+          }
+        },
+        {
+          "step": "Full amount authorized; 50% deposit captured with final_capture=false",
+          "result": "deposit $12.00 COMPLETED; balance stays authorized",
+          "ids": {
+            "authorization": "59L63985PT081594R",
+            "depositCapture": "08G671192S6668029",
+            "debugId": "f502422f3821a"
+          }
+        },
+        {
+          "step": "Courier attempt 1: nobody home",
+          "decision": "wait",
+          "result": "No había nadie; se propone reintentar mañana sin cobrar el saldo."
+        },
+        {
+          "step": "Courier attempt 2: nobody home",
+          "decision": "ask_shop",
+          "result": "Dos intentos sin entrega; la tienda debe coordinar el siguiente paso."
+        },
+        {
+          "step": "PayPal authorization after two failed attempts",
+          "result": "still PARTIALLY_CAPTURED: no balance captured, nothing voided, shop decides",
+          "ids": {
+            "authorization": "59L63985PT081594R"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "at": "2026-11-12T09:19:17.898Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "f9827192dacaf",
+          "requestId": "201ba33e7d08ad6afb2c4239f07cfe4b2df00a"
+        },
+        {
+          "at": "2026-11-12T09:19:20.255Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/8BA82633PL447743K",
+          "status": 200,
+          "debugId": "f854227a07980"
+        },
+        {
+          "at": "2026-11-12T09:19:23.536Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/59L63985PT081594R/capture",
+          "status": 201,
+          "debugId": "f502422f3821a",
+          "requestId": "91fe71b0d242cd23751360b1c315e491dca56f"
+        },
+        {
+          "at": "2026-11-12T09:19:26.476Z",
+          "method": "GET",
+          "path": "/v2/payments/authorizations/59L63985PT081594R",
+          "status": 200,
+          "debugId": "f861935930650"
+        }
+      ]
+    },
+    {
+      "scenario": "defect_refund",
+      "ok": true,
+      "ms": 19871,
+      "orderRef": "ES-5A42B053D2A26387",
+      "finalState": "review",
+      "paypal": {
+        "order": "73W89603NM9123010",
+        "authorization": "0MF68479EM169911A",
+        "captures": [
+          {
+            "id": "6VF08260VS223862M",
+            "amount": 700,
+            "status": "COMPLETED",
+            "role": "deposit"
+          },
+          {
+            "id": "5GS07870791023210",
+            "amount": 600,
+            "status": "COMPLETED",
+            "role": "balance"
+          }
+        ],
+        "refunds": [
+          {
+            "id": "5GM25835TJ0006947",
+            "amount": 400,
+            "status": "PENDING"
+          }
+        ]
+      },
+      "decisions": [
+        "release",
+        "ask_shop",
+        "refund_partial"
+      ],
+      "steps": [
+        {
+          "step": "Order created with intent AUTHORIZE (sandbox test card as buyer)",
+          "result": "73W89603NM9123010 for $13.00",
+          "ids": {
+            "order": "73W89603NM9123010",
+            "debugId": "f1014040b3e8b"
+          }
+        },
+        {
+          "step": "Full amount authorized; 50% deposit captured with final_capture=false",
+          "result": "deposit $7.00 COMPLETED; balance stays authorized",
+          "ids": {
+            "authorization": "0MF68479EM169911A",
+            "depositCapture": "6VF08260VS223862M",
+            "debugId": "f265908fd171e"
+          }
+        },
+        {
+          "step": "Courier confirms delivery with the buyer's 4-digit code",
+          "decision": "release",
+          "result": "balance $6.00 captured with final_capture=true (COMPLETED)",
+          "ids": {
+            "balanceCapture": "5GS07870791023210",
+            "debugId": "f33580552f703"
+          }
+        },
+        {
+          "step": "Buyer reports a defect with a photo within 48 h",
+          "decision": "ask_shop",
+          "result": "Hay una foto del defecto dentro de 48 horas; la tienda debe aprobar un reembolso parcial."
+        },
+        {
+          "step": "Shop explicitly approves a $4.00 partial refund",
+          "decision": "refund_partial",
+          "result": "refund PENDING",
+          "ids": {
+            "refund": "5GM25835TJ0006947",
+            "debugId": "f7334597b9cd1"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "at": "2026-11-12T09:19:30.417Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "f423622a56d01",
+          "requestId": "ac4708d26fec72753e5bfc3c0b545f0449b53f"
+        },
+        {
+          "at": "2026-11-12T09:19:32.052Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/73W89603NM9123010",
+          "status": 200,
+          "debugId": "f1014040b3e8b"
+        },
+        {
+          "at": "2026-11-12T09:19:35.315Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/0MF68479EM169911A/capture",
+          "status": 201,
+          "debugId": "f265908fd171e",
+          "requestId": "4db52f19f77e751ca9be3f3e4ae421665306b3"
+        },
+        {
+          "at": "2026-11-12T09:19:39.815Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/0MF68479EM169911A/capture",
+          "status": 201,
+          "debugId": "f33580552f703",
+          "requestId": "cdf3bba974e5c9cab46a1206c74dec3aeef8b0"
+        },
+        {
+          "at": "2026-11-12T09:19:46.057Z",
+          "method": "POST",
+          "path": "/v2/payments/captures/5GS07870791023210/refund",
+          "status": 201,
+          "debugId": "f7334597b9cd1",
+          "requestId": "53ad37fb47ecf610c689eea682fbeb8f0f6617"
+        }
+      ]
+    },
+    {
+      "scenario": "courier_payout",
+      "ok": true,
+      "ranAt": "2026-11-12T07:23:43.257Z",
+      "note": "Successful run at this time (local SQLite ledger, same code). A rerun in the final batch failed with INSUFFICIENT_FUNDS: the shared sandbox business account's payout balance is exhausted ($1.00 succeeded earlier, $3.00 and $6.50 were refused). Captures from the sandbox test card do not top it up.",
+      "orderRef": "ES-36016D14263962A2",
+      "finalState": "released",
+      "paypal": {
+        "order": "8SL899743P5015334",
+        "authorization": "0M840634330700519",
+        "captures": [
+          {
+            "id": "8LD77427GB688193S",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "deposit"
+          },
+          {
+            "id": "22F42281LN764340G",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "balance"
+          }
+        ],
+        "payoutBatch": "QRZGXJZSLV4BW",
+        "payoutBatchStatusNow": "SUCCESS",
+        "payoutItemStatusNow": "SUCCESS",
+        "payoutAmount": {
+          "currency": "USD",
+          "value": "1.00"
+        }
+      },
+      "calls": [
+        {
+          "at": "2026-11-12T07:23:37.774Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "ca593cac62958",
+          "requestId": "6cbe7864a8b0a01c275d2640149e7493054d71"
+        },
+        {
+          "at": "2026-11-12T07:23:38.950Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/8SL899743P5015334",
+          "status": 200,
+          "debugId": "ca593cadb9cd0"
+        },
+        {
+          "at": "2026-11-12T07:23:40.721Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/0M840634330700519/capture",
+          "status": 201,
+          "debugId": "ca593cae1e8f9",
+          "requestId": "75e51d1ad676cf99e5045978da5d8f830d2c2d"
+        },
+        {
+          "at": "2026-11-12T07:23:42.817Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/0M840634330700519/capture",
+          "status": 201,
+          "debugId": "ca593caecfa2d",
+          "requestId": "21f5be82de6b3d11036453e3d61887f0cc8397"
+        },
+        {
+          "at": "2026-11-12T07:23:43.257Z",
+          "method": "POST",
+          "path": "/v1/payments/payouts",
+          "status": 201,
+          "debugId": "ca593cafa0b19",
+          "requestId": "bfcc6aef78304fb13b845f4cbbe3e2c96f5f0c"
+        }
+      ],
+      "laterRerun": {
+        "scenario": "courier_payout",
+        "ok": false,
+        "ms": 18553,
+        "error": "PayPal 422: INSUFFICIENT_FUNDS (debug f53566452c370)"
+      }
+    },
+    {
+      "scenario": "duplicate_retry",
+      "ok": true,
+      "ms": 20222,
+      "orderRef": "ES-715BBD2AB68C500F",
+      "finalState": "released",
+      "paypal": {
+        "order": "1X553271K8995240Y",
+        "authorization": "78B83775KX8218004",
+        "captures": [
+          {
+            "id": "7KK73534BN913653L",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "deposit"
+          },
+          {
+            "id": "7Y877363RC263794G",
+            "amount": 1200,
+            "status": "COMPLETED",
+            "role": "balance"
+          }
+        ],
+        "refunds": []
+      },
+      "decisions": [
+        "release",
+        "wait"
+      ],
+      "steps": [
+        {
+          "step": "Order created with intent AUTHORIZE (sandbox test card as buyer)",
+          "result": "1X553271K8995240Y for $24.00",
+          "ids": {
+            "order": "1X553271K8995240Y",
+            "debugId": "f6391581489b4"
+          }
+        },
+        {
+          "step": "Full amount authorized; 50% deposit captured with final_capture=false",
+          "result": "deposit $12.00 COMPLETED; balance stays authorized",
+          "ids": {
+            "authorization": "78B83775KX8218004",
+            "depositCapture": "7KK73534BN913653L",
+            "debugId": "f581868c4ecd6"
+          }
+        },
+        {
+          "step": "Courier confirms delivery with the buyer's 4-digit code",
+          "decision": "release",
+          "result": "balance $12.00 captured with final_capture=true (COMPLETED)",
+          "ids": {
+            "balanceCapture": "7Y877363RC263794G",
+            "debugId": "f179569c9f772"
+          }
+        },
+        {
+          "step": "5 concurrent release() calls + a repeated delivery event + a raw PayPal replay with the same PayPal-Request-Id",
+          "result": "1 balance capture locally; PayPal replay returned 7Y877363RC263794G (same capture, no second charge)",
+          "ids": {
+            "balanceCapture": "7Y877363RC263794G",
+            "replayCapture": "7Y877363RC263794G",
+            "requestId": "07e3b4dc4b50f746daa14d8e1348c087eb5443"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "at": "2026-11-12T09:20:09.456Z",
+          "method": "POST",
+          "path": "/v2/checkout/orders",
+          "status": 201,
+          "debugId": "f7592739ad3be",
+          "requestId": "eee67562ee949af30ed764bd695e534fbb12b8"
+        },
+        {
+          "at": "2026-11-12T09:20:11.593Z",
+          "method": "GET",
+          "path": "/v2/checkout/orders/1X553271K8995240Y",
+          "status": 200,
+          "debugId": "f6391581489b4"
+        },
+        {
+          "at": "2026-11-12T09:20:15.049Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/78B83775KX8218004/capture",
+          "status": 201,
+          "debugId": "f581868c4ecd6",
+          "requestId": "61a155e38dad10d7f7757a8adc5fe4e0eb4839"
+        },
+        {
+          "at": "2026-11-12T09:20:19.975Z",
+          "method": "POST",
+          "path": "/v2/payments/authorizations/78B83775KX8218004/capture",
+          "status": 201,
+          "debugId": "f179569c9f772",
+          "requestId": "07e3b4dc4b50f746daa14d8e1348c087eb5443"
+        }
+      ]
+    }
+  ]
+}

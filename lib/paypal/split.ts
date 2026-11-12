@@ -1,8 +1,8 @@
 import { api, money } from "./client";
 import { get, save } from "../store";
 import type { Reservation } from "../types";
-function patch(ref: string, fields: Partial<Reservation>) {
-  return save({ ...get(ref), ...fields });
+async function patch(ref: string, fields: Partial<Reservation>) {
+  return save({ ...(await get(ref)), ...fields });
 }
 function approval(d: any) {
   const href = d.links?.find(
@@ -50,7 +50,7 @@ async function create(
 export async function holdSplit(r: Reservation) {
   if (!r.depositOrderId) {
     const d = await create(r, "CAPTURE", r.deposit, "deposit");
-    r = patch(r.ref, {
+    r = await patch(r.ref, {
       depositOrderId: d.id,
       depositApprovalUrl: approval(d),
       approvalUrl: approval(d),
@@ -58,7 +58,10 @@ export async function holdSplit(r: Reservation) {
   }
   if (!r.paypalOrderId) {
     const d = await create(r, "AUTHORIZE", r.total - r.deposit, "balance");
-    r = patch(r.ref, { paypalOrderId: d.id, balanceApprovalUrl: approval(d) });
+    r = await patch(r.ref, {
+      paypalOrderId: d.id,
+      balanceApprovalUrl: approval(d),
+    });
   }
   return r;
 }
@@ -92,8 +95,8 @@ export async function approveSplit(r: Reservation) {
       status: capture.status,
       role: "deposit",
     };
-    r = patch(r.ref, {
-      captures: [...get(r.ref).captures, deposit],
+    r = await patch(r.ref, {
+      captures: [...(await get(r.ref)).captures, deposit],
       state:
         capture.status === "COMPLETED"
           ? "awaiting_balance_approval"
@@ -110,7 +113,7 @@ export async function approveSplit(r: Reservation) {
     { ref: r.ref, verb: "balance-order-status" },
   );
   if (order.status !== "APPROVED" && order.status !== "COMPLETED")
-    return patch(r.ref, {
+    return await patch(r.ref, {
       state: "awaiting_balance_approval",
       approvalUrl: r.balanceApprovalUrl,
     });
@@ -126,7 +129,7 @@ export async function approveSplit(r: Reservation) {
   const authorization = d.purchase_units?.[0]?.payments?.authorizations?.[0];
   if (!authorization?.id)
     throw new Error("Balance authorization was not returned");
-  return patch(r.ref, {
+  return await patch(r.ref, {
     authorizationId: authorization.id,
     authorizationAt: authorization.create_time || new Date().toISOString(),
     originalAuthorizationAt:

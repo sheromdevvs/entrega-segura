@@ -2,8 +2,30 @@ import { holdSplit, approveSplit } from "./split";
 import { api, money } from "./client";
 import { get, save, locked } from "../store";
 import type { Reservation } from "../types";
-function patch(ref: string, fields: Partial<Reservation>) {
-  return save({ ...get(ref), ...fields });
+async function patch(ref: string, fields: Partial<Reservation>) {
+  return save({ ...(await get(ref)), ...fields });
+}
+/**
+ * PayPal's published sandbox test card (developer.paypal.com/tools/sandbox/card-testing).
+ * PayPal approves it without a buyer session, so a judge can run the whole flow in one click.
+ * Sandbox only: the client refuses any PAYPAL_ENV other than sandbox.
+ */
+export function sandboxCard() {
+  return {
+    card: {
+      name: "Entrega Segura Sandbox Buyer",
+      number: process.env.PAYPAL_SANDBOX_CARD || "4012000077777777",
+      expiry: `${new Date().getUTCFullYear() + 3}-12`,
+      security_code: "123",
+      billing_address: {
+        address_line_1: "2211 N First Street",
+        admin_area_2: "San Jose",
+        admin_area_1: "CA",
+        postal_code: "95131",
+        country_code: "US",
+      },
+    },
+  };
 }
 function captureRecord(
   r: Reservation,
@@ -24,14 +46,18 @@ export async function hold(input: {
   currency: string;
 }) {
   return locked(input.orderRef, async () => {
-    const r = get(input.orderRef);
+    const r = await get(input.orderRef);
     if (
       input.currency !== "USD" ||
       input.total !== r.total ||
       input.depositNow !== r.deposit
     )
       throw new Error("Order amount mismatch");
-    if (r.paymentStrategy === "split") return holdSplit(r);
+    if (r.paymentStrategy === "split") {
+      if (r.buyerMethod === "sandbox_card")
+        throw new Error("The sandbox card path uses one authorization");
+      return holdSplit(r);
+    }
     if (r.paypalOrderId) return r;
     const origin = process.env.APP_URL || "http://localhost:3025";
     const d = await api(
@@ -47,30 +73,38 @@ export async function hold(input: {
             amount: money(r.total),
           },
         ],
-        payment_source: {
-          paypal: {
-            experience_context: {
-              return_url: `${origin}/judge?ref=${r.ref}&approved=1`,
-              cancel_url: `${origin}/judge?ref=${r.ref}&cancelled=1`,
-              shipping_preference: "NO_SHIPPING",
-              user_action: "PAY_NOW",
-              brand_name: "Entrega Segura · Sandbox",
-            },
-          },
-        },
+        payment_source:
+          r.buyerMethod === "sandbox_card"
+            ? sandboxCard()
+            : {
+                paypal: {
+                  experience_context: {
+                    return_url: `${origin}/judge?ref=${r.ref}&approved=1`,
+                    cancel_url: `${origin}/judge?ref=${r.ref}&cancelled=1`,
+                    shipping_preference: "NO_SHIPPING",
+                    user_action: "PAY_NOW",
+                    brand_name: "Entrega Segura · Sandbox",
+                  },
+                },
+              },
       },
       { ref: r.ref, verb: "hold", amount: r.total },
     );
+    if (r.buyerMethod === "sandbox_card") {
+      if (!["APPROVED", "COMPLETED"].includes(d.status))
+        throw new Error(`Sandbox card was not approved (${d.status})`);
+      return await patch(r.ref, { paypalOrderId: d.id });
+    }
     const approval = d.links?.find(
       (x: any) => x.rel === "payer-action" || x.rel === "approve",
     )?.href;
     if (!approval) throw new Error("PayPal approval link missing");
-    return patch(r.ref, { paypalOrderId: d.id, approvalUrl: approval });
+    return await patch(r.ref, { paypalOrderId: d.id, approvalUrl: approval });
   });
 }
 export async function completeApproval({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
-    let r = get(orderRef);
+    let r = await get(orderRef);
     if (r.paymentStrategy === "split") return approveSplit(r);
     if (!r.paypalOrderId) throw new Error("Order not created");
     if (r.captures.some((x) => x.role === "deposit")) return r;
@@ -94,7 +128,7 @@ export async function completeApproval({ orderRef }: { orderRef: string }) {
             );
       const auth = d.purchase_units?.[0]?.payments?.authorizations?.[0];
       if (!auth?.id) throw new Error("Authorization not returned");
-      r = patch(r.ref, {
+      r = await patch(r.ref, {
         authorizationId: auth.id,
         authorizationAt: auth.create_time || new Date().toISOString(),
         originalAuthorizationAt: auth.create_time || new Date().toISOString(),
@@ -113,8 +147,8 @@ export async function completeApproval({ orderRef }: { orderRef: string }) {
       },
       { ref: r.ref, verb: "deposit", amount: r.deposit },
     );
-    return patch(r.ref, {
-      captures: captureRecord(get(r.ref), deposit, r.deposit, "deposit"),
+    return await patch(r.ref, {
+      captures: captureRecord(await get(r.ref), deposit, r.deposit, "deposit"),
       state: deposit.status === "COMPLETED" ? "held" : "deposit_pending",
     });
   });
@@ -134,17 +168,17 @@ async function reauthorizeUnlocked(r: Reservation) {
     { amount: money(amount) },
     { ref: r.ref, verb: `reauthorize-${r.authorizationId}`, amount },
   );
-  return patch(r.ref, {
+  return await patch(r.ref, {
     authorizationId: d.id,
     authorizationAt: d.create_time || new Date().toISOString(),
   });
 }
 export async function reauthorize({ orderRef }: { orderRef: string }) {
-  return locked(orderRef, () => reauthorizeUnlocked(get(orderRef)));
+  return locked(orderRef, async () => reauthorizeUnlocked(await get(orderRef)));
 }
 export async function release({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
-    let r = get(orderRef);
+    let r = await get(orderRef);
     if (r.captures.some((x) => x.role === "balance")) return r;
     if (r.state !== "held") throw new Error("Balance is not ready for capture");
     r = await reauthorizeUnlocked(r);
@@ -159,15 +193,15 @@ export async function release({ orderRef }: { orderRef: string }) {
       },
       { ref: r.ref, verb: "release", amount },
     );
-    return patch(r.ref, {
-      captures: captureRecord(get(r.ref), d, amount, "balance"),
+    return await patch(r.ref, {
+      captures: captureRecord(await get(r.ref), d, amount, "balance"),
       state: d.status === "COMPLETED" ? "released" : "review",
     });
   });
 }
 export async function cancel({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
-    const r = get(orderRef);
+    const r = await get(orderRef);
     if (r.state === "voided") return r;
     if (r.state !== "held" || r.captures.some((x) => x.role === "balance"))
       throw new Error("Balance cannot be voided");
@@ -177,7 +211,7 @@ export async function cancel({ orderRef }: { orderRef: string }) {
       undefined,
       { ref: r.ref, verb: "cancel", amount: r.total - r.deposit },
     );
-    return patch(r.ref, { state: "voided" });
+    return await patch(r.ref, { state: "voided" });
   });
 }
 export async function refund({
@@ -190,7 +224,7 @@ export async function refund({
   reason: string;
 }) {
   return locked(orderRef, async () => {
-    let r = get(orderRef);
+    let r = await get(orderRef);
     if (r.refunds.length) {
       if (r.refunds[0].amount !== amount)
         throw new Error("A refund already exists");
@@ -202,14 +236,14 @@ export async function refund({
       .reverse()
       .find((x) => x.status === "COMPLETED" && x.amount >= amount);
     if (!capture) throw new Error("Refund must fit a completed capture");
-    r = patch(r.ref, { refundIntent: amount });
+    r = await patch(r.ref, { refundIntent: amount });
     const d = await api(
       `/v2/payments/captures/${capture.id}/refund`,
       "POST",
       { amount: money(amount), note_to_payer: reason.slice(0, 200) },
       { ref: r.ref, verb: "refund", amount },
     );
-    return patch(r.ref, {
+    return await patch(r.ref, {
       refunds: [{ id: d.id, amount, status: d.status }],
       state: d.status === "COMPLETED" ? "refunded" : "review",
     });
@@ -227,7 +261,7 @@ export async function payOut({
   orderRef: string;
 }) {
   return locked(orderRef, async () => {
-    const r = get(orderRef);
+    const r = await get(orderRef);
     if (
       !r.captures.some((c) => c.role === "balance" && c.status === "COMPLETED")
     )
@@ -241,7 +275,7 @@ export async function payOut({
     )
       throw new Error("Courier payout intent is already fixed");
     if (r.payout) return r.payout;
-    patch(r.ref, { payoutIntent: { receiverEmail, amount, note } });
+    await patch(r.ref, { payoutIntent: { receiverEmail, amount, note } });
     const d = await api(
       "/v1/payments/payouts",
       "POST",
@@ -262,12 +296,12 @@ export async function payOut({
       },
       { ref: orderRef, verb: "payOut", amount },
     );
-    patch(orderRef, { payout: d.batch_header });
+    await patch(orderRef, { payout: d.batch_header });
     return d;
   });
 }
-export function status({ orderRef }: { orderRef: string }) {
-  const r = get(orderRef);
+export async function status({ orderRef }: { orderRef: string }) {
+  const r = await get(orderRef);
   return {
     order: r.paypalOrderId,
     authorization: r.authorizationId,
@@ -281,7 +315,7 @@ export function status({ orderRef }: { orderRef: string }) {
 }
 export async function refresh({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
-    const r = get(orderRef);
+    const r = await get(orderRef);
     for (const capture of r.captures) {
       const d = await api(
         `/v2/payments/captures/${capture.id}`,
@@ -344,7 +378,7 @@ export async function refresh({ orderRef }: { orderRef: string }) {
       !r.captures.some((c) => c.role === "balance")
     )
       state = "voided";
-    return patch(r.ref, {
+    return await patch(r.ref, {
       captures: r.captures,
       refunds: r.refunds,
       payout,

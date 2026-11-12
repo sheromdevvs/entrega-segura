@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     )
   )
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const r = byMerchantRef(
+  const r = await byMerchantRef(
     new URL(req.url).searchParams.get("merchantRef") || "",
   );
   if (!r) return NextResponse.json({ error: "Not found" }, { status: 404 });

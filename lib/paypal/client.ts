@@ -66,7 +66,7 @@ export async function api(
       : undefined;
   const operation =
     context && context.log !== false && method !== "GET"
-      ? startOperation(context.ref, context.verb, context.amount || 0)
+      ? await startOperation(context.ref, context.verb, context.amount || 0)
       : undefined;
   if (operation?.result) return operation.result;
   const r = await fetch(base + path, {
@@ -89,7 +89,7 @@ export async function api(
       (r.status < 500 &&
         d.details?.[0]?.issue !== "PREVIOUS_REQUEST_IN_PROGRESS"))
   )
-    finishOperation(operation.id, r.ok, d);
+    await finishOperation(operation.id, r.ok, d);
   const call = {
     at: new Date().toISOString(),
     path,
@@ -109,7 +109,7 @@ export async function api(
       requestId: id,
     }),
   );
-  if (context && context.log !== false) appendCall(context.ref, call);
+  if (context && context.log !== false) await appendCall(context.ref, call);
   if (!r.ok)
     throw new Error(
       `PayPal ${r.status}: ${d.details?.[0]?.issue || d.name || "request failed"} (debug ${call.debugId})`,

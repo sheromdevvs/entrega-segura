@@ -19,6 +19,7 @@ import {
   flushNotifications,
 } from "@/lib/orders";
 import { SimulatedLaar } from "@/lib/courier";
+import { nudgeWebhook } from "@/lib/paypal/webhook";
 const input = z.object({
   action: z.enum([
     "approve",
@@ -54,7 +55,7 @@ const input = z.object({
   confirmPayout: z.boolean().optional(),
 });
 async function owned(ref: string) {
-  const r = get(ref);
+  const r = await get(ref);
   if (r.owner !== (await session())) throw new Error("Order not found");
   return r;
 }
@@ -63,10 +64,16 @@ export async function GET(
   { params }: { params: Promise<{ ref: string }> },
 ) {
   try {
-    const order = await owned((await params).ref);
+    let order = await owned((await params).ref);
+    if (!order.lastWebhook && !order.webhookNudgedAt) {
+      await nudgeWebhook(order.ref).catch(() =>
+        console.warn("Webhook resend request failed", order.ref),
+      );
+      order = await owned(order.ref);
+    }
     return NextResponse.json({
       ...order,
-      notifications: notificationSummary(order.ref),
+      notifications: await notificationSummary(order.ref),
     });
   } catch {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -101,7 +108,7 @@ export async function POST(
         amount: body.amount,
         note: body.note || "Entrega de demostración",
       });
-      return NextResponse.json({ order: get(ref) });
+      return NextResponse.json({ order: await get(ref) });
     }
     if (body.action === "retry_event") {
       const event = r.events.find((x) => x.applied === false);
@@ -120,9 +127,9 @@ export async function POST(
         }),
       });
     if (body.action === "retry_notifications") {
-      retryNotificationsFor(ref);
+      await retryNotificationsFor(ref);
       await flushNotifications(ref);
-      return NextResponse.json({ order: get(ref) });
+      return NextResponse.json({ order: await get(ref) });
     }
     if (body.action === "reauthorize")
       return NextResponse.json({ order: await reauthorize({ orderRef: ref }) });
@@ -180,15 +187,7 @@ export async function POST(
       {
         error: e instanceof Error ? e.message : "Action failed",
         ...(ref && authorized
-          ? {
-              order: (() => {
-                try {
-                  return get(ref!);
-                } catch {
-                  return undefined;
-                }
-              })(),
-            }
+          ? { order: await get(ref).catch(() => undefined) }
           : {}),
       },
       { status: 400 },

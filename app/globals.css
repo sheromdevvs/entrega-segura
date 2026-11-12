@@ -4268,3 +4268,87 @@ pre {
 .waveform {
   min-width: 0;
 }
+
+.one-click {
+  border: 1px solid var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  background: var(--white);
+}
+.one-click-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+}
+.one-click h2 {
+  font-size: 18px;
+  font-weight: 550;
+  margin: 6px 0;
+}
+.one-click p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #555;
+  max-width: 620px;
+}
+.one-click-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.one-click-actions select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11px;
+  background: var(--white);
+  color: var(--ink);
+}
+.one-click-actions .button {
+  font-size: 11px;
+  min-height: 38px;
+}
+.one-click-steps {
+  list-style: decimal;
+  margin: 16px 0 6px 18px;
+  display: grid;
+  gap: 10px;
+}
+.one-click-steps li {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.one-click-steps strong {
+  display: block;
+  font-weight: 550;
+}
+.one-click-steps span {
+  display: block;
+  color: #555;
+}
+.one-click-steps code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.one-click small {
+  display: block;
+  margin-top: 10px;
+  font-size: 9px;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .one-click-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .one-click-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

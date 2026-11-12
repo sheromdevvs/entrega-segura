@@ -71,10 +71,10 @@ describe("webhook trust boundary (verification API mocked)", () => {
     expect((await handleWebhook(event, headers("TX-B"))).duplicate).toBe(true);
   });
   it("records successful verification and applies authorization void", async () => {
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.authorizationId = "AUTH-VOID";
     r.state = "held";
-    save(r);
+    await save(r);
     await handleWebhook(
       JSON.stringify({
         id: "EV-VOID",
@@ -83,15 +83,15 @@ describe("webhook trust boundary (verification API mocked)", () => {
       }),
       headers("TX-VOID"),
     );
-    expect(get(r.ref).state).toBe("voided");
-    expect(get(r.ref).lastWebhook?.verification_status).toBe("SUCCESS");
+    expect((await get(r.ref)).state).toBe("voided");
+    expect((await get(r.ref)).lastWebhook?.verification_status).toBe("SUCCESS");
   });
   it("an old authorization event cannot void its replacement", async () => {
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.authorizationId = "AUTH-NEW";
     r.paypalOrderId = "ORDER-REAUTH";
     r.state = "held";
-    save(r);
+    await save(r);
     await handleWebhook(
       JSON.stringify({
         id: "EV-OLD",
@@ -103,16 +103,16 @@ describe("webhook trust boundary (verification API mocked)", () => {
       }),
       headers("TX-OLD"),
     );
-    expect(get(r.ref).state).toBe("held");
+    expect((await get(r.ref)).state).toBe("held");
   });
   it("a late void cannot roll back a completed balance capture", async () => {
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.authorizationId = "AUTH-LATE";
     r.state = "released";
     r.captures = [
       { id: "CAP-LATE", role: "balance", amount: 1200, status: "COMPLETED" },
     ];
-    save(r);
+    await save(r);
     await handleWebhook(
       JSON.stringify({
         id: "EV-LATE",
@@ -121,6 +121,6 @@ describe("webhook trust boundary (verification API mocked)", () => {
       }),
       headers("TX-LATE"),
     );
-    expect(get(r.ref).state).toBe("released");
+    expect((await get(r.ref)).state).toBe("released");
   });
 });

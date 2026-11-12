@@ -18,12 +18,13 @@ export const products = [
   { id: "mug", name: "Taza personalizada", total: 1200 },
   { id: "frame", name: "Cuadro de mascota 8×10", total: 1300 },
 ];
-export function createOrder(
+export async function createOrder(
   owner: string,
   productId = "hoodie",
   source: Reservation["source"] = "judge",
   merchantRef?: string,
   paymentStrategy?: "single" | "split",
+  buyerMethod: "approval_link" | "sandbox_card" = "approval_link",
 ) {
   const p = products.find((x) => x.id === productId);
   if (!p) throw new Error("Unknown product");
@@ -36,6 +37,7 @@ export function createOrder(
     paymentStrategy:
       paymentStrategy ||
       (process.env.PAYPAL_CAPTURE_STRATEGY === "split" ? "split" : "single"),
+    buyerMethod,
     product: p.name,
     total: p.total,
     deposit: Math.round(p.total / 200) * 100,
@@ -52,7 +54,7 @@ export function createOrder(
 }
 export async function processEvent(ref: string, e: DeliveryEvent) {
   return locked(`gate:${ref}`, async () => {
-    let r = get(ref);
+    let r = await get(ref);
     const index = r.events.findIndex((x) => x.id === e.id);
     if (index >= 0 && r.events[index].applied !== false) return r;
     let decision;
@@ -63,30 +65,30 @@ export async function processEvent(ref: string, e: DeliveryEvent) {
       decision = decide(r, e);
       r.events.push({ ...e, observedState: r.state, decision, applied: false });
       r.decisions.push(decision);
-      save(r);
+      await save(r);
     }
     try {
       if (decision.action === "release") await release({ orderRef: ref });
       if (decision.action === "cancel") await cancel({ orderRef: ref });
-      r = get(ref);
+      r = await get(ref);
       r.events.find((x) => x.id === e.id)!.applied = true;
       r.lastError = undefined;
-      save(r);
+      await save(r);
     } catch (err) {
-      r = get(ref);
+      r = await get(ref);
       r.lastError =
         err instanceof Error ? err.message : "Payment action failed";
-      save(r);
+      await save(r);
       throw err;
     }
     if (e.interpretation) {
       try {
         const explanation = await explainDecision(decision);
         if (explanation) {
-          const current = get(ref);
+          const current = await get(ref);
           current.events.find((x) => x.id === e.id)!.gateExplanation =
             explanation;
-          save(current);
+          await save(current);
         }
       } catch {
         console.warn(
@@ -95,16 +97,16 @@ export async function processEvent(ref: string, e: DeliveryEvent) {
         );
       }
     }
-    await notifyShop(get(ref));
+    await notifyShop(await get(ref));
     return get(ref);
   });
 }
 export async function shopRefund(ref: string, amount: number) {
-  const r = get(ref);
+  const r = await get(ref);
   const decision = approveRefund(r, amount);
   if (decision.action !== "refund_partial") throw new Error(decision.reason);
   r.decisions.push(decision);
-  save(r);
+  await save(r);
   const result = await refund({
     orderRef: ref,
     amount,
@@ -127,7 +129,7 @@ export async function notifyShop(r: Reservation) {
     refunds: r.refunds,
     sandbox: true,
   });
-  enqueueNotification(JSON.parse(body).id, body);
+  await enqueueNotification(JSON.parse(body).id, body);
   await flushNotifications();
 }
 export async function flushNotifications(orderRef?: string) {
@@ -141,7 +143,7 @@ export async function flushNotifications(orderRef?: string) {
     parsed.hostname !== "127.0.0.1"
   )
     throw new Error("Shop webhook must use HTTPS");
-  for (const n of pendingNotifications(orderRef)) {
+  for (const n of await pendingNotifications(orderRef)) {
     const time = String(Date.now());
     try {
       const r = await fetch(url, {
@@ -156,10 +158,10 @@ export async function flushNotifications(orderRef?: string) {
         body: n.body,
         signal: AbortSignal.timeout(8000),
       });
-      if (r.ok) deliveredNotification(n.id);
-      else failedNotification(n.id, `HTTP ${r.status}`);
+      if (r.ok) await deliveredNotification(n.id);
+      else await failedNotification(n.id, `HTTP ${r.status}`);
     } catch {
-      failedNotification(n.id, "Connection failed");
+      await failedNotification(n.id, "Connection failed");
       console.error("Shop notification remains queued", n.id);
     }
   }

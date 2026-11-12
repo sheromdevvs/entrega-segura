@@ -6,25 +6,25 @@ const hour = 3600000,
   day = 24 * hour;
 export async function maintainOrder(ref: string, now = new Date()) {
   return locked(`maintenance:${ref}`, async () => {
-    let order = get(ref);
-    const update = (status: "ok" | "review", message: string) => {
-      order = get(ref);
+    let order = await get(ref);
+    const update = async (status: "ok" | "review", message: string) => {
+      order = await get(ref);
       order.maintenance = { checkedAt: now.toISOString(), status, message };
-      save(order);
+      await save(order);
       return order;
     };
     if (
       !order.authorizationId &&
       !order.captures.some((c) => c.status === "PENDING")
     )
-      return update(
+      return await update(
         "ok",
         "El pedido todavía no tiene una autorización que revisar.",
       );
     try {
       order = await refresh({ orderRef: ref });
       if (order.state !== "held")
-        return update(
+        return await update(
           "ok",
           "Estado consultado en PayPal. No hay un saldo autorizado pendiente de revisión.",
         );
@@ -50,7 +50,7 @@ export async function maintainOrder(ref: string, now = new Date()) {
               ? "La autorización alcanzó su vida máxima. Se necesita una nueva aprobación."
               : "La autorización está a menos de 24 horas de su vida máxima. La tienda debe revisar el pedido.",
         });
-        const result = update(
+        const result = await update(
           "review",
           age >= policy.maxAuthorizationDays * day
             ? "Autorización vencida: solicite una nueva aprobación antes de enviar o cobrar."
@@ -61,14 +61,14 @@ export async function maintainOrder(ref: string, now = new Date()) {
       }
       if (renewalAge >= policy.honorHours * hour) {
         order = await reauthorize({ orderRef: ref });
-        const result = update(
+        const result = await update(
           "ok",
           "PayPal devolvió una reautorización. Se conserva el límite de vida de la aprobación original.",
         );
         await notifyShop(result);
         return result;
       }
-      return update(
+      return await update(
         "ok",
         renewalAge >= 60 * hour
           ? "La autorización se acerca al fin del período de honor. La revisión automática reautorizará cuando sea elegible."
@@ -77,7 +77,7 @@ export async function maintainOrder(ref: string, now = new Date()) {
     } catch (e) {
       const message =
         e instanceof Error ? e.message : "No se pudo revisar la autorización";
-      const latest = get(ref);
+      const latest = await get(ref);
       if (latest.state === "held") {
         await processEvent(ref, {
           id: `maintenance-error:${ref}:${now.toISOString().slice(0, 10)}`,
@@ -87,14 +87,14 @@ export async function maintainOrder(ref: string, now = new Date()) {
           text: "La revisión automática no pudo mantener la autorización; la tienda debe revisar el estado.",
         }).catch(() => {});
       }
-      return update("review", message);
+      return await update("review", message);
     }
   });
 }
 export async function runMaintenance() {
   return locked("maintenance:batch", async () => {
     const now = new Date();
-    const eligible = listAll()
+    const eligible = (await listAll())
       .filter(
         (r) =>
           ["held", "deposit_pending", "review"].includes(r.state) &&

@@ -1,0 +1,104 @@
+{
+  "generatedAt": "2026-11-12T09:21:04.086Z",
+  "endpoint": "https://entrega-segura-app.vercel.app/api/paypal/webhook",
+  "webhookId": "7YN52330AD573344H",
+  "method": "Every delivery is checked with POST /v1/notifications/verify-webhook-signature on the raw event before any state change; duplicates are ignored by transmission id and event id.",
+  "success": {
+    "count": 9,
+    "note": "Genuine PayPal Sandbox deliveries that the deployed endpoint verified (verification_status SUCCESS) and applied to the matching reservation.",
+    "events": [
+      {
+        "orderRef": "ES-715BBD2AB68C500F",
+        "paypalOrder": "1X553271K8995240Y",
+        "eventId": "WH-91Y350218T065201K-18Y419962Y9710842",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "50e77bf5-de7a-11f1-bed2-f18a0661890c",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:20:39.441Z"
+      },
+      {
+        "orderRef": "ES-B82647DA1370B290",
+        "paypalOrder": "8A781495TX6714906",
+        "eventId": "WH-2MU286225D897825C-9C7388654Y564791N",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "447ac974-de7a-11f1-8c07-fb011877769e",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:20:18.951Z"
+      },
+      {
+        "orderRef": "ES-5A42B053D2A26387",
+        "paypalOrder": "73W89603NM9123010",
+        "eventId": "WH-0MP23118HG556712T-7EN47718DP8573210",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "3905be40-de7a-11f1-bb9c-2741dc7eef4c",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:20:00.325Z"
+      },
+      {
+        "orderRef": "ES-EA4ED79A78997AF7",
+        "paypalOrder": "8BA82633PL447743K",
+        "eventId": "WH-049922274V041025F-5K18873856303092U",
+        "eventType": "PAYMENT.AUTHORIZATION.CREATED",
+        "transmissionId": "2d2101ac-de7a-11f1-bb9c-673e388df4d3",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:19:38.752Z"
+      },
+      {
+        "orderRef": "ES-0F4EF3F7CA646D30",
+        "paypalOrder": "9Y154559B48424521",
+        "eventId": "WH-4XL712737V712721K-95586269J01643033",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "2679358c-de7a-11f1-bb9c-8903875cb4c2",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:19:28.649Z"
+      },
+      {
+        "orderRef": "ES-C5865517160BE9D5",
+        "paypalOrder": "9GA51186MN289643N",
+        "eventId": "WH-06T75550CM948963E-7WB85890HY125545F",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "2104443f-de7a-11f1-bb9c-d1fb79cdefb5",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T09:19:18.804Z"
+      },
+      {
+        "orderRef": "ES-2B6F49C8F07A0C03",
+        "paypalOrder": "20N98552YH7132948",
+        "eventId": "WH-29M86862FW3765201-3PT82559EK723801H",
+        "eventType": "PAYMENT.AUTHORIZATION.CREATED",
+        "transmissionId": "ffbb1540-de70-11f1-88dd-074f0d2d8eb4",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T08:14:05.101Z"
+      },
+      {
+        "orderRef": "ES-61E685CA2DB5926B",
+        "paypalOrder": "65917745MX917963D",
+        "eventId": "WH-8GH5933420475072T-8LE51938RK824551V",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "ee55cdc7-de70-11f1-88dd-cdd0febcab32",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T08:13:33.630Z"
+      },
+      {
+        "orderRef": "ES-77F5EACD91AC8B63",
+        "paypalOrder": "2WY59082BY209014W",
+        "eventId": "WH-5FB66056FR302542Y-2V173208P7348301T",
+        "eventType": "PAYMENT.CAPTURE.COMPLETED",
+        "transmissionId": "9b47a045-de6d-11f1-bb9c-a33d6f97cd79",
+        "verification_status": "SUCCESS",
+        "receivedAt": "2026-11-12T07:49:41.961Z"
+      }
+    ]
+  },
+  "failure": {
+    "forgedEventId": "WH-FORGED-f1bed1d4-ba48-4378-b95b-12dba88ac704",
+    "deployedEndpointHttpStatus": 400,
+    "deployedEndpointBody": {
+      "error": "Webhook rejected or processing failed"
+    },
+    "paypalVerifyResponse": {
+      "verification_status": "FAILURE"
+    },
+    "note": "A forged event with an invented signature is rejected by the deployed endpoint (HTTP 400, nothing applied); PayPal's verification API itself answers FAILURE for it."
+  }
+}

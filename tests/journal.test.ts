@@ -7,34 +7,36 @@ const dir = mkdtempSync(join(tmpdir(), "entrega-journal-"));
 process.env.STORE_DIR = dir;
 const { startOperation, finishOperation } = await import("../lib/store");
 describe("durable operation safety", () => {
-  it("locks an operation amount before a network request", () => {
-    startOperation("order-1", "refund", 300);
-    expect(() => startOperation("order-1", "refund", 400)).toThrow(
+  it("locks an operation amount before a network request", async () => {
+    await startOperation("order-1", "refund", 300);
+    await expect(startOperation("order-1", "refund", 400)).rejects.toThrow(
       "already fixed",
     );
   });
-  it("recovers a known PayPal result without creating another operation", () => {
-    const op = startOperation("order-2", "release", 1200);
-    finishOperation(op.id, true, { id: "CAPTURE-RECOVERED" });
-    expect(startOperation("order-2", "release", 1200).result).toEqual({
+  it("recovers a known PayPal result without creating another operation", async () => {
+    const op = await startOperation("order-2", "release", 1200);
+    await finishOperation(op.id, true, { id: "CAPTURE-RECOVERED" });
+    expect((await startOperation("order-2", "release", 1200)).result).toEqual({
       id: "CAPTURE-RECOVERED",
     });
   });
-  it("blocks ambiguous retries beyond the assumed six-hour window", () => {
-    startOperation("order-3", "release", 1200);
+  it("blocks ambiguous retries beyond the assumed six-hour window", async () => {
+    await startOperation("order-3", "release", 1200);
     const db = new DatabaseSync(join(dir, "entrega.sqlite"));
     db.prepare("UPDATE operations SET started=? WHERE id=?").run(
       Date.now() - 7 * 3600000,
       "order-3:release",
     );
     db.close();
-    expect(() => startOperation("order-3", "release", 1200)).toThrow(
+    await expect(startOperation("order-3", "release", 1200)).rejects.toThrow(
       "reconciliation",
     );
   });
-  it("allows retry after a definitive rejected request", () => {
-    const op = startOperation("order-4", "authorize", 2400);
-    finishOperation(op.id, false, { name: "ORDER_NOT_APPROVED" });
-    expect(() => startOperation("order-4", "authorize", 2400)).not.toThrow();
+  it("allows retry after a definitive rejected request", async () => {
+    const op = await startOperation("order-4", "authorize", 2400);
+    await finishOperation(op.id, false, { name: "ORDER_NOT_APPROVED" });
+    await expect(
+      startOperation("order-4", "authorize", 2400),
+    ).resolves.toBeTruthy();
   });
 });

@@ -116,7 +116,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 async function checkout() {
-  const r = createOrder("unit", "hoodie", "judge", undefined, "split");
+  const r = await createOrder("unit", "hoodie", "judge", undefined, "split");
   return paypal.hold({
     orderRef: r.ref,
     total: r.total,
@@ -202,7 +202,7 @@ describe("two-order compatibility strategy, transport mocked", () => {
     expect(voided.captures[0].amount).toBe(1200);
   });
   it("prevents a courier payout intent from changing recipient or amount", async () => {
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.state = "released";
     r.captures = [
       {
@@ -212,7 +212,7 @@ describe("two-order compatibility strategy, transport mocked", () => {
         status: "COMPLETED",
       },
     ];
-    save(r);
+    await save(r);
     await paypal.payOut({
       orderRef: r.ref,
       amount: 300,
@@ -236,6 +236,6 @@ describe("two-order compatibility strategy, transport mocked", () => {
     expect(
       requests.filter((x) => x.path === "/v1/payments/payouts"),
     ).toHaveLength(1);
-    expect(get(r.ref).payout?.payout_batch_id).toBe("PAYOUT-1");
+    expect((await get(r.ref)).payout?.payout_batch_id).toBe("PAYOUT-1");
   });
 });

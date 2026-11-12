@@ -46,6 +46,16 @@ export default function Judge() {
     [strategy, setStrategy] = useState("single"),
     [tab, setTab] = useState<Tab>("conversation"),
     [preset, setPreset] = useState(""),
+    [runScenario, setRunScenario] = useState("delivered"),
+    [run, setRun] = useState<{
+      scenario: string;
+      steps: {
+        step: string;
+        result: string;
+        decision?: string;
+        ids?: Record<string, string | undefined>;
+      }[];
+    } | null>(null),
     [config, setConfig] = useState<{
       paypalConfigured: boolean;
       aiConfigured: boolean;
@@ -162,6 +172,36 @@ export default function Judge() {
         e instanceof Error ? e.message : "No se pudo crear el checkout.",
       );
       await load().catch(() => {});
+    } finally {
+      setBusy("");
+    }
+  }
+  async function oneClick() {
+    setError("");
+    setNotice("");
+    setRun(null);
+    setBusy("run");
+    try {
+      const response = await fetch("/api/judge/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario: runScenario, productId: product }),
+      });
+      const d = await response.json();
+      if (!response.ok) throw new Error(d.error);
+      setRun({ scenario: d.scenario, steps: d.steps });
+      setOrder(d.order);
+      await load();
+      router.replace(`/judge?mode=sandbox&ref=${d.order.ref}`, {
+        scroll: false,
+      });
+      setNotice(
+        "Recorrido completado en PayPal Sandbox. Los webhooks verificados llegan en unos segundos.",
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo completar el recorrido.",
+      );
     } finally {
       setBusy("");
     }
@@ -562,6 +602,75 @@ export default function Judge() {
             <Icon name="close" size={16} />
           </button>
         </div>
+      )}
+      {!guided && (
+        <section className="one-click" aria-label="Recorrido automático">
+          <div className="one-click-head">
+            <div>
+              <span className="eyebrow">UN CLIC · PAYPAL SANDBOX REAL</span>
+              <h2>Ejecute el pedido completo sin iniciar sesión</h2>
+              <p>
+                El comprador paga con la tarjeta de prueba oficial de PayPal
+                Sandbox. Se crea la autorización, se cobra el anticipo, el
+                courier simulado confirma el código y la regla cobra o anula el
+                saldo. Cada paso muestra sus IDs de PayPal.
+              </p>
+            </div>
+            <div className="one-click-actions">
+              <select
+                aria-label="Escenario"
+                value={runScenario}
+                onChange={(e) => setRunScenario(e.target.value)}
+              >
+                <option value="delivered">Entregado con código</option>
+                <option value="refused">Rechazado en la puerta</option>
+                <option value="not_home_twice">Nadie en casa ×2</option>
+                <option value="defect_refund">
+                  Defecto + reembolso parcial
+                </option>
+              </select>
+              <button
+                className="button button-black"
+                disabled={!!busy}
+                onClick={oneClick}
+              >
+                {busy === "run" ? (
+                  <span className="spinner" />
+                ) : (
+                  <Icon name="northeast" size={16} />
+                )}{" "}
+                {busy === "run"
+                  ? "Ejecutando en Sandbox…"
+                  : "Ejecutar en Sandbox"}
+              </button>
+            </div>
+          </div>
+          {run && (
+            <ol className="one-click-steps">
+              {run.steps.map((s, i) => (
+                <li key={i}>
+                  <strong>{s.step}</strong>
+                  <span>
+                    {s.decision ? `Regla: ${s.decision} · ` : ""}
+                    {s.result}
+                  </span>
+                  {s.ids && (
+                    <code>
+                      {Object.entries(s.ids)
+                        .filter(([, v]) => v)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(" · ")}
+                    </code>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+          <small>
+            Límite: 4 recorridos cada 10 minutos por visitante. También puede
+            crear un pedido abajo y aprobarlo usted mismo en PayPal.
+          </small>
+        </section>
       )}
       {notice && (
         <div className="feedback" role="status">

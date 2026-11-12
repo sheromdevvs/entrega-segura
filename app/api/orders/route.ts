@@ -7,7 +7,7 @@ import { hold } from "@/lib/paypal";
 export const runtime = "nodejs";
 export async function GET() {
   try {
-    return NextResponse.json({ orders: list(await session()) });
+    return NextResponse.json({ orders: await list(await session()) });
   } catch {
     return NextResponse.json({ error: "Session unavailable" }, { status: 503 });
   }
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
         paymentStrategy: z.enum(["single", "split"]).optional(),
       })
       .parse(await req.json());
-    const r = createOrder(
+    const r = await createOrder(
       owner,
       body.productId,
       "judge",

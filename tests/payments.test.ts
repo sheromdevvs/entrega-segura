@@ -84,8 +84,8 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
-function ready() {
-  const r = createOrder("unit");
+async function ready() {
+  const r = await createOrder("unit");
   r.state = "held";
   r.paypalOrderId = "ORDER-1";
   r.authorizationId = "AUTH-1";
@@ -94,13 +94,13 @@ function ready() {
   r.captures = [
     { id: "DEP-1", amount: r.deposit, status: "COMPLETED", role: "deposit" },
   ];
-  return store.save(r);
+  return await store.save(r);
 }
 describe("money lifecycle safety", () => {
   it("captures deposit partially, with final_capture false", async () => {
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.paypalOrderId = "ORDER-1";
-    store.save(r);
+    await store.save(r);
     const d = await paypal.completeApproval({ orderRef: r.ref });
     expect(d.state).toBe("held");
     expect(calls.find((x) => x.path.endsWith("/capture"))?.body).toMatchObject({
@@ -110,9 +110,9 @@ describe("money lifecycle safety", () => {
   });
   it("does not expose a pending deposit as ready to ship", async () => {
     pendingCapture = true;
-    const r = createOrder("unit");
+    const r = await createOrder("unit");
     r.paypalOrderId = "ORDER-1";
-    store.save(r);
+    await store.save(r);
     const d = await paypal.completeApproval({ orderRef: r.ref });
     expect(d.state).toBe("deposit_pending");
     await expect(paypal.release({ orderRef: r.ref })).rejects.toThrow(
@@ -120,7 +120,7 @@ describe("money lifecycle safety", () => {
     );
   });
   it("captures exact balance with final_capture true", async () => {
-    const r = ready();
+    const r = await ready();
     const d = await paypal.release({ orderRef: r.ref });
     expect(d.state).toBe("released");
     expect(calls.find((x) => x.path.endsWith("/capture"))?.body).toMatchObject({
@@ -129,24 +129,24 @@ describe("money lifecycle safety", () => {
     });
   });
   it("concurrent deliveries capture the balance once", async () => {
-    const r = ready();
+    const r = await ready();
     await Promise.all(
       Array.from({ length: 20 }, () => paypal.release({ orderRef: r.ref })),
     );
     expect(calls.filter((x) => x.path.endsWith("/capture"))).toHaveLength(1);
     expect(
-      store.get(r.ref).captures.filter((x) => x.role === "balance"),
+      (await store.get(r.ref)).captures.filter((x) => x.role === "balance"),
     ).toHaveLength(1);
   });
   it("cannot cancel after a balance capture", async () => {
-    const r = ready();
+    const r = await ready();
     await paypal.release({ orderRef: r.ref });
     await expect(paypal.cancel({ orderRef: r.ref })).rejects.toThrow(
       "cannot be voided",
     );
   });
   it("refusal voids only the remaining authorization", async () => {
-    const r = ready();
+    const r = await ready();
     const d = await paypal.cancel({ orderRef: r.ref });
     expect(d.state).toBe("voided");
     expect(d.captures).toHaveLength(1);
@@ -154,7 +154,7 @@ describe("money lifecycle safety", () => {
     expect(calls.filter((x) => x.path.endsWith("/void"))).toHaveLength(1);
   });
   it("refunds once and rejects a changed amount", async () => {
-    const r = ready();
+    const r = await ready();
     await paypal.refund({ orderRef: r.ref, amount: 300, reason: "Reviewed" });
     await paypal.refund({ orderRef: r.ref, amount: 300, reason: "Retry" });
     await expect(
@@ -163,10 +163,10 @@ describe("money lifecycle safety", () => {
     expect(calls.filter((x) => x.path.endsWith("/refund"))).toHaveLength(1);
   });
   it("reauthorizes an aged hold for the remaining amount", async () => {
-    const r = ready();
+    const r = await ready();
     r.authorizationAt = new Date(Date.now() - 4 * 86400000).toISOString();
     r.originalAuthorizationAt = r.authorizationAt;
-    store.save(r);
+    await store.save(r);
     const d = await paypal.release({ orderRef: r.ref });
     expect(d.authorizationId).toBe("NEW-AUTH");
     expect(
@@ -179,19 +179,19 @@ describe("money lifecycle safety", () => {
     ).toBe(true);
   });
   it("refuses reauthorization beyond the original 29-day lifetime", async () => {
-    const r = ready();
+    const r = await ready();
     r.authorizationAt = new Date(Date.now() - 4 * 86400000).toISOString();
     r.originalAuthorizationAt = new Date(
       Date.now() - 30 * 86400000,
     ).toISOString();
-    store.save(r);
+    await store.save(r);
     await expect(paypal.release({ orderRef: r.ref })).rejects.toThrow(
       "expired",
     );
     expect(calls).toHaveLength(0);
   });
   it("retries a failed event using the same PayPal request ID", async () => {
-    const r = ready();
+    const r = await ready();
     failCapture = true;
     const e = {
       id: "delivery",
@@ -202,10 +202,10 @@ describe("money lifecycle safety", () => {
       code: r.code,
     };
     await expect(processEvent(r.ref, e)).rejects.toThrow("INTERNAL_ERROR");
-    expect(store.get(r.ref).events[0].applied).toBe(false);
+    expect((await store.get(r.ref)).events[0].applied).toBe(false);
     failCapture = false;
     await processEvent(r.ref, e);
-    expect(store.get(r.ref).state).toBe("released");
+    expect((await store.get(r.ref)).state).toBe("released");
     const captures = calls.filter((x) => x.path.endsWith("/capture"));
     expect(captures).toHaveLength(2);
     expect(captures[0].requestId).toBe(captures[1].requestId);
