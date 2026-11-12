@@ -1,3 +1,4 @@
+import { holdSplit, approveSplit } from "./split";
 import { api, money } from "./client";
 import { get, save, locked } from "../store";
 import type { Reservation } from "../types";
@@ -30,6 +31,7 @@ export async function hold(input: {
       input.depositNow !== r.deposit
     )
       throw new Error("Order amount mismatch");
+    if (r.paymentStrategy === "split") return holdSplit(r);
     if (r.paypalOrderId) return r;
     const origin = process.env.APP_URL || "http://localhost:3025";
     const d = await api(
@@ -69,6 +71,7 @@ export async function hold(input: {
 export async function completeApproval({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
     let r = get(orderRef);
+    if (r.paymentStrategy === "split") return approveSplit(r);
     if (!r.paypalOrderId) throw new Error("Order not created");
     if (r.captures.some((x) => x.role === "deposit")) return r;
     if (!r.authorizationId) {
@@ -96,6 +99,7 @@ export async function completeApproval({ orderRef }: { orderRef: string }) {
         authorizationAt: auth.create_time || new Date().toISOString(),
         originalAuthorizationAt: auth.create_time || new Date().toISOString(),
         state: "authorized",
+        authorizationStatus: auth.status || "CREATED",
       });
     }
     const deposit = await api(
@@ -224,7 +228,20 @@ export async function payOut({
 }) {
   return locked(orderRef, async () => {
     const r = get(orderRef);
+    if (
+      !r.captures.some((c) => c.role === "balance" && c.status === "COMPLETED")
+    )
+      throw new Error("Courier payout requires a completed delivery payment");
+    if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 650)
+      throw new Error("Demo courier payout must be between $0.01 and $6.50");
+    if (
+      r.payoutIntent &&
+      (r.payoutIntent.amount !== amount ||
+        r.payoutIntent.receiverEmail !== receiverEmail)
+    )
+      throw new Error("Courier payout intent is already fixed");
     if (r.payout) return r.payout;
+    patch(r.ref, { payoutIntent: { receiverEmail, amount, note } });
     const d = await api(
       "/v1/payments/payouts",
       "POST",
@@ -254,6 +271,8 @@ export function status({ orderRef }: { orderRef: string }) {
   return {
     order: r.paypalOrderId,
     authorization: r.authorizationId,
+    depositOrder: r.depositOrderId,
+    strategy: r.paymentStrategy || "single",
     captures: r.captures,
     refunds: r.refunds,
     lastWebhook: r.lastWebhook,
@@ -262,25 +281,75 @@ export function status({ orderRef }: { orderRef: string }) {
 }
 export async function refresh({ orderRef }: { orderRef: string }) {
   return locked(orderRef, async () => {
-    let r = get(orderRef);
-    for (const c of r.captures) {
-      const d = await api(`/v2/payments/captures/${c.id}`, "GET", undefined, {
-        ref: r.ref,
-        verb: "capture-status",
-      });
-      c.status = d.status;
+    const r = get(orderRef);
+    for (const capture of r.captures) {
+      const d = await api(
+        `/v2/payments/captures/${capture.id}`,
+        "GET",
+        undefined,
+        { ref: r.ref, verb: "capture-status" },
+      );
+      capture.status = d.status;
+    }
+    for (const refund of r.refunds) {
+      const d = await api(
+        `/v2/payments/refunds/${refund.id}`,
+        "GET",
+        undefined,
+        { ref: r.ref, verb: "refund-status" },
+      );
+      refund.status = d.status;
+    }
+    let authorizationStatus = r.authorizationStatus;
+    if (r.authorizationId) {
+      const d = await api(
+        `/v2/payments/authorizations/${r.authorizationId}`,
+        "GET",
+        undefined,
+        { ref: r.ref, verb: "authorization-status" },
+      );
+      authorizationStatus = d.status;
+    }
+    let payout = r.payout;
+    if (typeof payout?.payout_batch_id === "string") {
+      const d = await api(
+        `/v1/payments/payouts/${payout.payout_batch_id}`,
+        "GET",
+        undefined,
+        { ref: r.ref, verb: "payout-status" },
+      );
+      payout = d.batch_header;
     }
     let state = r.state;
     if (
       state === "deposit_pending" &&
       r.captures.find((c) => c.role === "deposit")?.status === "COMPLETED"
     )
-      state = "held";
+      state =
+        r.paymentStrategy === "split" && !r.authorizationId
+          ? "awaiting_balance_approval"
+          : "held";
     if (
-      state === "review" &&
-      r.captures.find((c) => c.role === "balance")?.status === "COMPLETED"
+      r.captures.some((c) => c.role === "balance" && c.status === "COMPLETED")
     )
       state = "released";
-    return patch(r.ref, { captures: r.captures, state });
+    if (r.refunds.some((c) => c.status === "COMPLETED")) state = "refunded";
+    if (
+      ["EXPIRED", "DENIED"].includes(authorizationStatus || "") &&
+      !r.captures.some((c) => c.role === "balance")
+    )
+      state = "review";
+    if (
+      authorizationStatus === "VOIDED" &&
+      !r.captures.some((c) => c.role === "balance")
+    )
+      state = "voided";
+    return patch(r.ref, {
+      captures: r.captures,
+      refunds: r.refunds,
+      payout,
+      state,
+      authorizationStatus,
+    });
   });
 }

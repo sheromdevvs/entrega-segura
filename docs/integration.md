@@ -9,8 +9,14 @@ This is an opt-in **sandbox-only** API. It can be implemented by any private mer
 Header: `Authorization: Bearer <SHOP_API_KEY>` and `Content-Type: application/json`.
 
 ```json
-{ "merchantRef": "DEMO-your-opaque-reference", "productId": "hoodie" }
+{
+  "merchantRef": "DEMO-your-opaque-reference",
+  "productId": "hoodie",
+  "paymentStrategy": "single"
+}
 ```
+
+`paymentStrategy` is optional (`single` or `split`). `split` requires separate deposit and balance approvals; an existing reservation never changes strategy on retry.
 
 Allowed fixture IDs: `hoodie` ($24), `mug` ($12), `frame` ($13). All money is USD, represented as integer cents internally. Amounts are selected on the server. Do not send real names, addresses, customer contact information or payment screenshots.
 
@@ -22,7 +28,7 @@ The product is fixed when the reservation is created. Start a new reference for 
 
 `GET /api/integrations/pascal/orders?merchantRef=...` with the same bearer header. The merchant must authorize the visitor's merchant reference in its own session before proxying this endpoint. Do not expose `SHOP_API_KEY` in browser code.
 
-Returns: order reference, product, integer total/deposit, money state, capture/refund IDs and statuses, latest gate decision, latest verified PayPal webhook, and `sandbox: true`. No guest ownership token or delivery code is returned.
+Returns: order reference, product, integer total/deposit, money state, capture/refund IDs and statuses, latest gate decision, latest verified PayPal webhook, maintenance status, approval strategy, and `sandbox: true`. No guest ownership token or delivery code is returned.
 
 ## Callback to merchant
 
@@ -52,7 +58,7 @@ Headers: `X-Entrega-Timestamp` (Unix milliseconds) and `X-Entrega-Signature` (he
 }
 ```
 
-Use the authenticated status lookup as the source of truth. Notifications use a persistent local outbox and retries; delivery ordering is not guaranteed. The Pascal demo callback validates the signature and acknowledges without creating commercial side effects; it does not dispatch products or contact customers. It shows state through the authenticated lookup.
+Use the authenticated status lookup as the source of truth. Notifications use a persistent local outbox and exponential-backoff retries through the opt-in maintenance scheduler; delivery ordering is not guaranteed. The Pascal demo callback validates the signature and acknowledges without creating commercial side effects; it does not dispatch products or contact customers. It shows state through the authenticated lookup.
 
 ## Boundaries
 

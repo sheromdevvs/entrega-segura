@@ -9,8 +9,21 @@ function db() {
     mkdirSync(dir, { recursive: true });
     connection = new DatabaseSync(join(dir, "entrega.sqlite"));
     connection.exec(
-      "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS reservations(ref TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS webhooks(id TEXT PRIMARY KEY, event_id TEXT UNIQUE, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, body TEXT NOT NULL, delivered INTEGER DEFAULT 0); CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, amount INTEGER NOT NULL, started INTEGER NOT NULL, state TEXT NOT NULL, result TEXT);",
+      "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS reservations(ref TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS webhooks(id TEXT PRIMARY KEY, event_id TEXT UNIQUE, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, body TEXT NOT NULL, delivered INTEGER DEFAULT 0); CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, amount INTEGER NOT NULL, started INTEGER NOT NULL, state TEXT NOT NULL, result TEXT);",
     );
+    const columns = connection
+      .prepare("PRAGMA table_info(notifications)")
+      .all() as { name: string }[];
+    for (const [name, definition] of [
+      ["attempts", "INTEGER NOT NULL DEFAULT 0"],
+      ["next_attempt", "INTEGER NOT NULL DEFAULT 0"],
+      ["last_error", "TEXT"],
+    ]) {
+      if (!columns.some((column) => column.name === name))
+        connection.exec(
+          `ALTER TABLE notifications ADD COLUMN ${name} ${definition}`,
+        );
+    }
   }
   return connection;
 }
@@ -46,6 +59,7 @@ export function byPayPalId(id: string) {
     .find(
       (x) =>
         x.paypalOrderId === id ||
+        x.depositOrderId === id ||
         x.authorizationId === id ||
         x.captures.some((c) => c.id === id) ||
         x.refunds.some((c) => c.id === id) ||
@@ -84,10 +98,53 @@ export function enqueueNotification(id: string, body: string) {
     .prepare("INSERT OR IGNORE INTO notifications(id,body) VALUES(?,?)")
     .run(id, body);
 }
-export function pendingNotifications() {
+export function pendingNotifications(orderRef?: string) {
+  const query = orderRef
+    ? "SELECT id,body FROM notifications WHERE delivered=0 AND next_attempt<=? AND json_extract(body,'$.orderRef')=? ORDER BY rowid LIMIT 50"
+    : "SELECT id,body FROM notifications WHERE delivered=0 AND next_attempt<=? ORDER BY rowid LIMIT 50";
+  return (
+    orderRef
+      ? db().prepare(query).all(Date.now(), orderRef)
+      : db().prepare(query).all(Date.now())
+  ) as { id: string; body: string }[];
+}
+export function failedNotification(id: string, error: string) {
+  const row = db()
+    .prepare("SELECT attempts FROM notifications WHERE id=?")
+    .get(id) as { attempts: number } | undefined;
+  if (!row) return;
+  const attempts = row.attempts + 1;
+  db()
+    .prepare(
+      "UPDATE notifications SET attempts=?,next_attempt=?,last_error=? WHERE id=?",
+    )
+    .run(
+      attempts,
+      Date.now() + Math.min(1800000, 30000 * 2 ** Math.min(attempts - 1, 6)),
+      error,
+      id,
+    );
+}
+export function retryNotificationsFor(ref: string) {
+  db()
+    .prepare(
+      "UPDATE notifications SET next_attempt=0 WHERE delivered=0 AND json_extract(body,'$.orderRef')=?",
+    )
+    .run(ref);
+}
+export function notificationSummary(ref: string) {
   return db()
-    .prepare("SELECT id,body FROM notifications WHERE delivered=0")
-    .all() as { id: string; body: string }[];
+    .prepare(
+      "SELECT id,delivered,attempts,next_attempt,last_error FROM notifications WHERE json_extract(body,'$.orderRef')=? ORDER BY rowid DESC LIMIT 20",
+    )
+    .all(ref);
+}
+export function listAll() {
+  return (
+    db().prepare("SELECT data FROM reservations ORDER BY rowid DESC").all() as {
+      data: string;
+    }[]
+  ).map((row) => JSON.parse(row.data) as Reservation);
 }
 export function deliveredNotification(id: string) {
   db().prepare("UPDATE notifications SET delivered=1 WHERE id=?").run(id);

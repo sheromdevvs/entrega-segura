@@ -1,3 +1,4 @@
+import { explainDecision } from "./ai";
 import { randomInt, randomBytes } from "node:crypto";
 import {
   get,
@@ -6,6 +7,7 @@ import {
   enqueueNotification,
   pendingNotifications,
   deliveredNotification,
+  failedNotification,
 } from "./store";
 import { createHmac } from "node:crypto";
 import { decide, approveRefund } from "./gate";
@@ -21,6 +23,7 @@ export function createOrder(
   productId = "hoodie",
   source: Reservation["source"] = "judge",
   merchantRef?: string,
+  paymentStrategy?: "single" | "split",
 ) {
   const p = products.find((x) => x.id === productId);
   if (!p) throw new Error("Unknown product");
@@ -30,6 +33,9 @@ export function createOrder(
     owner,
     source,
     merchantRef,
+    paymentStrategy:
+      paymentStrategy ||
+      (process.env.PAYPAL_CAPTURE_STRATEGY === "split" ? "split" : "single"),
     product: p.name,
     total: p.total,
     deposit: Math.round(p.total / 200) * 100,
@@ -73,6 +79,22 @@ export async function processEvent(ref: string, e: DeliveryEvent) {
       save(r);
       throw err;
     }
+    if (e.interpretation) {
+      try {
+        const explanation = await explainDecision(decision);
+        if (explanation) {
+          const current = get(ref);
+          current.events.find((x) => x.id === e.id)!.gateExplanation =
+            explanation;
+          save(current);
+        }
+      } catch {
+        console.warn(
+          "AI explanation unavailable; deterministic decision retained",
+          ref,
+        );
+      }
+    }
     await notifyShop(get(ref));
     return get(ref);
   });
@@ -108,7 +130,7 @@ export async function notifyShop(r: Reservation) {
   enqueueNotification(JSON.parse(body).id, body);
   await flushNotifications();
 }
-export async function flushNotifications() {
+export async function flushNotifications(orderRef?: string) {
   const url = process.env.SHOP_WEBHOOK_URL,
     secret = process.env.SHOP_WEBHOOK_SECRET;
   if (!url || !secret) return;
@@ -119,7 +141,7 @@ export async function flushNotifications() {
     parsed.hostname !== "127.0.0.1"
   )
     throw new Error("Shop webhook must use HTTPS");
-  for (const n of pendingNotifications()) {
+  for (const n of pendingNotifications(orderRef)) {
     const time = String(Date.now());
     try {
       const r = await fetch(url, {
@@ -135,7 +157,9 @@ export async function flushNotifications() {
         signal: AbortSignal.timeout(8000),
       });
       if (r.ok) deliveredNotification(n.id);
+      else failedNotification(n.id, `HTTP ${r.status}`);
     } catch {
+      failedNotification(n.id, "Connection failed");
       console.error("Shop notification remains queued", n.id);
     }
   }

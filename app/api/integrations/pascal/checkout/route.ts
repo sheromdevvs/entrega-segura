@@ -8,6 +8,7 @@ import { get, save, byMerchantRef, locked } from "@/lib/store";
 const schema = z.object({
   merchantRef: z.string().min(1).max(100),
   productId: z.enum(["hoodie", "mug", "frame"]),
+  paymentStrategy: z.enum(["single", "split"]).optional(),
 });
 export async function POST(req: Request) {
   try {
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
           body.productId,
           "pascal",
           body.merchantRef,
+          body.paymentStrategy,
         );
       await hold({
         orderRef: r.ref,

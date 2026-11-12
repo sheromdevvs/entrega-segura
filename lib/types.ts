@@ -18,6 +18,7 @@ export type DeliveryEvent = {
   photo?: string;
   applied?: boolean;
   decision?: Decision;
+  gateExplanation?: { text: string; provider: string; model: string };
   interpretation?: {
     kind: EventKind;
     explanation: string;
@@ -43,6 +44,7 @@ export type ApiCall = {
 };
 export type MoneyState =
   | "awaiting_approval"
+  | "awaiting_balance_approval"
   | "authorized"
   | "deposit_pending"
   | "held"
@@ -55,6 +57,20 @@ export type Reservation = {
   owner: string;
   source: "judge" | "pascal";
   merchantRef?: string;
+  paymentStrategy?: "single" | "split";
+  depositOrderId?: string;
+  depositApprovalUrl?: string;
+  balanceApprovalUrl?: string;
+  authorizationStatus?: string;
+  maintenance?: { checkedAt: string; status: "ok" | "review"; message: string };
+  payoutIntent?: { receiverEmail: string; amount: number; note: string };
+  notifications?: {
+    id: string;
+    delivered: number;
+    attempts: number;
+    next_attempt: number;
+    last_error: string | null;
+  }[];
   product: string;
   total: number;
   deposit: number;

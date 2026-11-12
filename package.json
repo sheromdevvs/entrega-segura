@@ -12,7 +12,8 @@
     "sandbox:probe": "tsx --env-file=.env scripts/sandbox-probe.ts",
     "webhook:register": "tsx --env-file=.env scripts/register-webhook.ts",
     "test:sandbox": "RUN_SANDBOX_TESTS=1 node --env-file=.env node_modules/vitest/vitest.mjs run",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "maintenance": "tsx --env-file=.env scripts/maintenance.ts"
   },
   "dependencies": {
     "next": "16.4.6",

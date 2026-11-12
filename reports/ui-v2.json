@@ -1,0 +1,29 @@
+{
+  "at": "2026-11-12T06:28:50.920035+00:00",
+  "mode": "guided; money illustrative, no PayPal transactions",
+  "viewports": [
+    390,
+    1280
+  ],
+  "horizontalOverflow": {
+    "landing390": false,
+    "shop390": false,
+    "judge390": false,
+    "judge1280": false
+  },
+  "checked": [
+    "original images loaded",
+    "mobile navigation",
+    "delivery with matching code",
+    "refusal",
+    "first absence wait and second absence shop review",
+    "partial delivery review",
+    "defect with synthetic photo",
+    "explicit partial refund",
+    "explicit illustrative courier payout",
+    "shop text search",
+    "private Pascal showcase rendering"
+  ],
+  "screenshots": "reports/screenshots/v2/",
+  "realPaymentJourney": "deferred at user request"
+}

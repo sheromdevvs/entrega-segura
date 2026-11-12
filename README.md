@@ -1,189 +1,203 @@
 # Entrega Segura
 
-**Fund the custom order now. Collect the balance on verified delivery.** A delivery-aware checkout prototype for Latin American shops that sell over WhatsApp, grounded in Pascal Studio's workflow in Ecuador.
+**A deposit to create. The balance on delivery.** A delivery-aware checkout for personalized-gift shops that sell over WhatsApp, based on Pascal Studio's workflow in Ecuador.
 
-**PayPal:** Orders v2 (`AUTHORIZE`), Payments v2 (partial/final capture, void, reauthorize, refund), webhook verification, and a Payouts adapter. **AI:** Spanish delivery-event extraction and message drafting; optional image interpretation and Whisper transcription. **Measured:** 22/24 correct text classifications (91.7%) on a small labelled set; see [the complete run](reports/ai-evaluation.json). Real sandbox order creation and API checks have run. **Buyer-approved partial/final capture and a real verified PayPal webhook are still awaiting end-to-end validation.**
-
-PayPal calls are real **sandbox** calls. WhatsApp and courier updates are **simulated**. All orders and people are fictional. This is a working local prototype with explicitly unfinished payment-lifecycle verification, not a live payment product. No Pascal Studio source code is included here.
+**PayPal:** Orders v2, Payments v2 partial/final capture, void, refund, reauthorization, Payouts and webhook-signature verification. **AI:** Spanish text, voice and image interpretation; message drafts; explanation of a decision already made by code. **Measured:** 22/24 text classifications (91.7%) in a small labelled set, with [all predictions published](reports/ai-evaluation.json). **Two clearly separated modes:** a complete guided view with illustrative money and real AI, and a real PayPal Sandbox integration awaiting its final buyer-approved lifecycle validation. No live payments, real customers, or private Pascal source code.
 
 ## What happens to the money · 30 seconds
 
 ![One approval, two moments of payment](public/money-flow.svg)
 
-For a fictional $24 hoodie, excluding shipping:
+A fictional $24 custom hoodie, excluding shipping:
 
-1. Buyer approves a $24 authorization in PayPal Sandbox.
-2. Capture $12 for production with `final_capture: false`.
-3. Keep the $12 balance authorized, within PayPal's time limits.
-4. Delivered + matching four-digit code → capture $12 with `final_capture: true`.
-5. Refused at the door → void the remaining authorization. The disclosed custom-production deposit is retained.
+1. Buyer approves a $24 PayPal authorization.
+2. Capture $12 for production using `final_capture: false`.
+3. Leave the other $12 authorized, within PayPal's time limits.
+4. Delivered + correct code → capture $12 using `final_capture: true`.
+5. Refused at the door → void the remaining hold; retain the disclosed production deposit.
 
-The intended benefit: buyers do not pay the balance without a confirmed delivery; shops can see an authorization before dispatching; nobody manually checks bank-transfer screenshots. A hold is **time-limited and can fail**. This is not escrow, insurance, or a guarantee of collection. Buyer rights and PayPal disputes still apply.
+If the merchant account does not support repeated captures, the implemented **two-order strategy** uses a $12 `CAPTURE` deposit order and a $12 `AUTHORIZE` balance order. It requires two buyer approvals and never silently charges another deposit after a failure.
+
+The intended benefit: the buyer does not pay the balance without a confirmed delivery; the shop can see the balance authorization before dispatching; neither checks bank-transfer screenshots. A hold is time-limited and can fail. This is not escrow or insurance. PayPal disputes and buyer rights still apply.
 
 ## Try it
 
-**Local review first; no hosted URL yet.** The owner requested local testing before publication. Start the app below, then open:
+**Local review first. Hosted URL: not published yet.** The owner requested completing the application and design before delegating final account setup and real payment validation.
 
-- [Landing](http://localhost:3025)
-- [Judge demo](http://localhost:3025/judge)
-- [Shop panel](http://localhost:3025/tienda)
+- [Product and flow](http://localhost:3025)
+- [Guided judge demo](http://localhost:3025/judge) — no PayPal approval required
+- [PayPal Sandbox workspace](http://localhost:3025/judge?mode=sandbox)
+- [Shop workspace](http://localhost:3025/tienda)
+- [Design system](http://localhost:3025/design-system)
 
-Start a journey → open **Approve in PayPal Sandbox** → sign in with a **sandbox personal buyer** and approve → return and select **I approved → Check & capture deposit**. Approval is never faked. A normal/live PayPal login does not work in sandbox. After the deposit is completed, send a message with the displayed delivery code or use a labelled courier-scenario button. Expand each API call for PayPal IDs, HTTP status, debug ID, and a response with personal fields redacted.
+### Guided view
 
-Start a separate order for refusal or another final outcome. For absence, use **Not home** twice; the second attempt asks the shop to review. For a defect, first complete delivery, then attach a fictional PNG/JPG/WebP image and describe the issue. A shop review and explicit refund amount are required. A photo claim alone never initiates a refund.
+An illustrative order starts with its production deposit. Explore delivered, refused, two failed delivery attempts, incomplete delivery, and a defect with a synthetic evidence image. The same pure gate computes the outcome; all money stays in browser state and **no PayPal IDs or verified webhooks are fabricated**. A different final outcome loads a new example.
 
-**Pascal integration:** a separate, private opt-in branch adds `http://localhost:3015/demo/entrega-segura`. Pascal's server creates an Entrega checkout using a shared API credential. The browser claims the checkout through an expiring signed URL. Pascal retrieves authoritative status server to server and validates timestamped HMAC callbacks. This proves an API connection to the private Pascal application; it does **not** connect to commercial orders or its production database. The private implementation is intentionally absent here; see [the public API contract](docs/integration.md).
+Writing a message, attaching a fictional photo, or submitting a voice note can call the configured real AI provider. The model result is distinct from the rule decision. You can record a voice note in a supported browser or upload one, review the transcript, then submit it. No WhatsApp is sent.
+
+The shop-review tab supports an explicit partial refund, authorization review and an illustrative courier payout. The shop overview includes search, filters, activity and JSON export. The evidence tab exports a labelled report and exposes each gate event.
+
+### Real PayPal Sandbox
+
+Choose a product and either **one approval** or **two approvals**. Create a checkout, open the buyer approval URL, sign in with a sandbox personal account, approve, then select **Ya aprobé · comprobar**. A normal/live PayPal login does not work. Approval is never faked.
+
+After a completed deposit and balance authorization, submit a delivery message with its displayed code or choose a clearly labelled simulated courier outcome. Payment actions use the real sandbox API. Each actual response is expandable with HTTP status, IDs, request ID and `paypal-debug-id`.
+
+Use a new order per final outcome. Defects require an image, an already completed delivery, a report within 48 hours and shop approval of a valid refund amount. Payouts require a completed balance capture, a sandbox recipient, a fixed intent and explicit confirmation. No automatic payout is triggered by the model.
+
+### Private Pascal integration
+
+A separate private branch implements `http://localhost:3015/demo/entrega-segura`. Pascal's server initiates checkout with a shared API key; a signed expiring link assigns the order to the buyer session. Pascal retrieves the payment state through an authenticated API and validates timestamped HMAC callbacks.
+
+The Pascal demo uses isolated fixtures, matching monochrome visuals and server-selected prices. It does not create commercial orders, access production databases, start manufacturing or send WhatsApp. Its implementation remains private. See the public [merchant API contract](docs/integration.md).
 
 ## What's real vs simulated
 
-| Component                                                                                      | Status                                                                                                                        |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| PayPal OAuth, order creation, order retrieval, unapproved-order rejection, idempotent creation | Real sandbox; exercised                                                                                                       |
-| Deposit/final captures, void, refunds, reauthorization                                         | Real API implementation; lifecycle requires sandbox buyer approval; mocked unit coverage is separately labelled               |
-| PayPal webhook signatures                                                                      | Verification API implementation; no genuine `SUCCESS` event received locally yet; unit verification responses are mocked      |
-| Payouts                                                                                        | Real sandbox adapter; not yet exercised against the account                                                                   |
-| AI text parser and Spanish reply drafts                                                        | Real DeepInfra calls; measured 22/24                                                                                          |
-| Photo input                                                                                    | Actual attachment sent to OpenAI vision; one fictional-illustration smoke check passed; outside the text accuracy measurement |
-| Voice notes                                                                                    | Real OpenAI `whisper-1` call tested with a synthetic Spanish note; outside the text accuracy measurement                      |
-| LAAR                                                                                           | `SimulatedLaar`; no access to LAAR's real API                                                                                 |
-| WhatsApp                                                                                       | Browser simulator; no Meta/Kapso connection and no messages sent                                                              |
-| Pascal                                                                                         | Local server-to-server integration with a private checkout; opt-in fixture orders; production untouched                       |
-| Products and people                                                                            | Fictional orders using business-supplied prices and policies; no customer data                                                |
+| Component                | Guided view                                                  | Sandbox workspace                                                   |
+| ------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Money                    | Explicitly illustrative browser state                        | Real sandbox API implementation                                     |
+| PayPal IDs               | None; illustrative entries never appear as provider evidence | Actual IDs and responses when calls occur                           |
+| AI text, image and voice | Real configured provider when submitting input               | Same provider implementation                                        |
+| Scenario buttons         | Labelled simulated delivery events                           | Labelled simulated delivery events; money calls remain real sandbox |
+| Defect scenario image    | Synthetic, explicitly identified                             | User attaches fictional test evidence                               |
+| WhatsApp / LAAR          | Simulated                                                    | Simulated; no live Meta, Kapso or LAAR account                      |
+| Webhook SUCCESS          | Never simulated                                              | Only after real signature verification                              |
+| Pascal                   | Independent demonstration                                    | Local private API integration, isolated from commercial operations  |
 
-Courier events entered through the judge buttons are explicitly labelled simulated. A real deployment would need authenticated courier/customer evidence, merchant access control, dispute handling and operational reconciliation. The public demo is sandbox-only.
+**Verification boundary:** earlier real sandbox smoke checks exercised OAuth, order creation/retrieval, exact amount, direct PayPal idempotent replay, unapproved-authorization rejection, invalid authorization and webhook subscriptions. They did not prove settlement. Final buyer-approved partial/final capture, void/refund, real aged-authorization reauthorization, Payouts account capability, and authentic hosted webhook SUCCESS remain deliberately deferred. This revision has not rerun real payment tests at the owner's request.
 
 ## PayPal APIs used
 
-All requests are pinned to `https://api-m.sandbox.paypal.com`. A live environment is rejected.
+Only `https://api-m.sandbox.paypal.com` is allowed; live mode is rejected.
 
-| Endpoint                                            | Purpose                                                      |
-| --------------------------------------------------- | ------------------------------------------------------------ |
-| `POST /v1/oauth2/token`                             | Server-side client-credentials authentication                |
-| `POST /v2/checkout/orders`                          | Create full-amount `AUTHORIZE` order                         |
-| `GET /v2/checkout/orders/{id}`                      | Check actual approval and retrieve order                     |
-| `POST /v2/checkout/orders/{id}/authorize`           | Authorize after buyer approval                               |
-| `POST /v2/payments/authorizations/{id}/capture`     | Production deposit (`false`) or final balance (`true`)       |
-| `GET /v2/payments/authorizations/{id}`              | Authorization evidence / sandbox probe                       |
-| `POST /v2/payments/authorizations/{id}/void`        | Release remaining hold on refusal                            |
-| `POST /v2/payments/authorizations/{id}/reauthorize` | Refresh eligible aged authorization                          |
-| `GET /v2/payments/captures/{id}`                    | Reconcile capture state; pending is never shown as completed |
-| `POST /v2/payments/captures/{id}/refund`            | Shop-approved partial refund, one intent per reservation     |
-| `POST /v1/payments/payouts`                         | Courier/supplier payout adapter                              |
-| `GET, POST /v1/notifications/webhooks`              | Find/register deployed webhook subscription                  |
-| `POST /v1/notifications/verify-webhook-signature`   | Verify received event before processing                      |
+| Endpoint                                            | Use                                                                          |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `POST /v1/oauth2/token`                             | Server authentication                                                        |
+| `POST /v2/checkout/orders`                          | Full `AUTHORIZE`, or separate deposit `CAPTURE` + balance `AUTHORIZE` orders |
+| `GET /v2/checkout/orders/{id}`                      | Check actual approval                                                        |
+| `POST /v2/checkout/orders/{id}/authorize`           | Authorize the full order or balance                                          |
+| `POST /v2/checkout/orders/{id}/capture`             | Capture the separate deposit in two-order mode                               |
+| `POST /v2/payments/authorizations/{id}/capture`     | Partial deposit or final balance capture                                     |
+| `GET /v2/payments/authorizations/{id}`              | Reconcile authorization state                                                |
+| `POST /v2/payments/authorizations/{id}/void`        | Void the remaining balance                                                   |
+| `POST /v2/payments/authorizations/{id}/reauthorize` | Renew an eligible authorization                                              |
+| `GET /v2/payments/captures/{id}`                    | Reconcile capture status                                                     |
+| `POST /v2/payments/captures/{id}/refund`            | One reviewed partial refund intent                                           |
+| `GET /v2/payments/refunds/{id}`                     | Reconcile refund completion                                                  |
+| `POST /v1/payments/payouts`                         | Courier/supplier payout                                                      |
+| `GET /v1/payments/payouts/{id}`                     | Reconcile payout batch state                                                 |
+| `GET, POST /v1/notifications/webhooks`              | Find/register the deployed subscription                                      |
+| `POST /v1/notifications/verify-webhook-signature`   | Verify before processing any event                                           |
 
-`lib/paypal/` exports `hold`, `release`, `cancel`, `refund`, `payOut`, `status`, plus approval, reconciliation and reauthorization helpers. Every write includes a deterministic `PayPal-Request-Id`. Financial operations have a SQLite journal: successful results survive local restarts, amounts cannot change after an intent is recorded, and an unresolved operation older than six hours requires reconciliation rather than a blind retry. Calls record HTTP status and `paypal-debug-id`. The journal assumes one service instance and an intact store.
+The adapter exports `hold`, `release`, `cancel`, `refund`, `payOut`, `status`, with approval, refresh and reauthorization helpers. Every write carries a deterministic `PayPal-Request-Id`. A SQLite intent journal fixes operation amounts, recovers successful responses across restarts and blocks ambiguous retries older than six hours for manual reconciliation. A balance capture is never initiated twice for the same recorded reservation. The system assumes a single service instance and intact durable storage.
 
-The usual honor period is three days; the original authorization life is at most 29 days. Reauthorization does not reset the original 29-day deadline. The final-capture path reauthorizes an eligible aged hold; expired holds stop and require new approval. Timer-driven reconciliation is not implemented. The shop can explicitly check/reauthorize from the demo.
+Authorizations have a usual three-day honor period and maximum 29-day original lifetime. Reauthorization preserves the original lifetime. The implemented maintenance worker reconciles pending payments, reauthorizes eligible holds, asks the shop near expiry or on failure, and retries merchant callbacks with persistent exponential backoff. It never automatically captures a balance or refunds a claim.
 
-**Partial-capture compatibility is not yet proven for this sandbox account.** The included probe is designed to verify it before presenting the full money journey as validated. If the account disallows multiple captures, a two-order fallback is still required; it is not silently simulated.
-
-References: [PayPal authorize/delay capture](https://developer.paypal.com/checkout/delay-capture/), [Payments v2](https://developer.paypal.com/api/payments/v2/), [webhook verification](https://developer.paypal.com/api/rest/webhooks/rest/).
+References: [authorize/delay capture](https://developer.paypal.com/checkout/delay-capture/), [Orders v2](https://developer.paypal.com/api/orders/v2/), [Payments v2](https://developer.paypal.com/api/payments/v2/), [Payouts](https://developer.paypal.com/api/payments.payouts-batch/v1/), [webhooks](https://developer.paypal.com/api/rest/webhooks/rest/).
 
 ## AI used and how
 
-- Text: DeepInfra `meta-llama/Llama-3.3-70B-Instruct` by default. OpenAI `gpt-4.1-mini` is available by setting `AI_PROVIDER=openai`. `AI_MODEL` overrides the text model.
-- Photos: OpenAI `gpt-4.1-mini` by default (`AI_VISION_MODEL` override). Actual image content, message, and attachment presence go to the model. Use fictional evidence only.
-- Voice: OpenAI `whisper-1`, Spanish transcription; the transcript is editable before submission to the parser.
-- Output: a Zod-validated `DeliveryEvent` kind, a factual Spanish interpretation, and a draft reply in the **usted** tone. The model never receives payment credentials, never invokes payment APIs, and cannot invent a trusted delivery code. Code is extracted directly from the submitted message or from the explicitly simulated courier adapter.
-- Money decisions: a pure deterministic gate verifies current payment state, matching delivery code, duplicate events, attempt counts, authorization age, and defect policy. Human review approves any refund. The UI shows the model interpretation alongside the separate rule decision.
-- Development tool: OpenAI Codex assisted architecture, implementation, tests, UI and documentation. Generated code was checked locally; no invisible instructions to judges are included.
+- **Text:** DeepInfra `meta-llama/Llama-3.3-70B-Instruct` by default; OpenAI `gpt-4.1-mini` when configured. `AI_PROVIDER` / `AI_MODEL` select the text provider/model.
+- **Images:** actual attached image + message go to OpenAI `gpt-4.1-mini`; override with `AI_VISION_MODEL`.
+- **Voice:** OpenAI `whisper-1` transcribes Spanish. The transcript is editable before interpretation.
+- **Output:** a Zod-validated delivery kind, factual interpretation and a draft in Ecuadorian Spanish using **usted**. A separate read-only model call may explain an already computed gate decision. If explanation fails, the deterministic result remains intact.
+- **Money:** the model never receives payment credentials or a trusted expected delivery code, never invokes payment tools and never decides a refund. Code checks payment state, exact submitted code, duplicate events, attempt count, expiry and refund evidence. Shop approval is explicit.
+- **Development:** OpenAI Codex assisted implementation, tests and documentation. Built-in image generation created four original monochrome fictional assets; no paid image API was invoked. Prompts and assets are documented [here](docs/visual-assets.md). No hidden judge instructions are included.
 
-### Measured parser result
+### Measured result
 
-The first run scored **22/24 (91.7%)** at temperature 0. [Every input, expected label, output and error is available](reports/ai-evaluation.json). This is a small developer-authored text set, not an independent benchmark. It covers delivered, refusal, absence, incomplete delivery, defects, expiry, future/conditional language, greetings and prompt injection. Image/voice accuracy was not measured. Errors count as incorrect.
+The first labelled text run scored **22/24 (91.7%)**, temperature 0. [Full results](reports/ai-evaluation.json). This is a small developer-authored set, not an independent benchmark. Image/voice accuracy and explanation quality were not measured.
 
-The two mistakes were “Todavía no me llega el pedido” and “No he recibido nada y nadie vino”: both expected `unknown`, predicted `not_home`. Neither can release money. Ambiguity is a reason to review, not evidence of a completed delivery. Do not infer production reliability from this small score.
+Two ambiguous messages — “Todavía no me llega el pedido” and “No he recibido nada y nadie vino” — were expected `unknown` but predicted `not_home`. Neither permits collecting a balance. The limitation remains visible; no production reliability claim follows from this score.
+
+Earlier smoke checks exercised [one synthetic Spanish voice note](reports/audio-smoke.json) and [one fictional image](reports/vision-smoke.json). Those are functionality checks, not accuracy benchmarks. The landing audio is locally synthesized and labelled as such; generated photographs do not depict actual customers or deliveries.
 
 ## Run locally
 
-Node **22.19+** (Node 22 or 24), npm, and a PayPal Sandbox REST application. SQLite uses Node's built-in `node:sqlite`; Node 22 may emit an experimental warning.
+Node **22.19+** (22 or 24), npm, and sandbox credentials for the real-payment mode. Built-in `node:sqlite` can emit an experimental warning in Node 22.
 
 ```sh
 npm ci
 cp .env.example .env
-# Fill sandbox credentials, APP_URL=http://localhost:3025,
-# STORE_DIR=./.data and a random SESSION_SECRET of at least 32 characters.
-# Set DEEPINFRA_API_KEY and/or OPENAI_API_KEY for actual AI calls.
+# Set APP_URL=http://localhost:3025, STORE_DIR=./.data,
+# and SESSION_SECRET to a random string of at least 32 characters.
+# Set PayPal sandbox and AI keys for the corresponding features.
 npm run dev
 ```
 
-Generate local signing keys with `openssl rand -hex 32`. Keep all secrets in the ignored `.env`; never commit buyer passwords, API credentials, SQLite data or `.env` files. `.env.example` intentionally contains only variable names with empty values. `SHOP_API_KEY` and `SHOP_WEBHOOK_SECRET` are only needed for the Pascal integration; the keys must match Pascal's server configuration. `PASCAL_DEMO_URL` is a public navigation URL, not a secret.
+Generate secrets with `openssl rand -hex 32`. Never commit `.env`, passwords, credentials or the SQLite ledger. `.env.example` lists every variable with no values. The guided delivery scenarios do not require PayPal credentials; actual AI submissions require their provider key.
 
 ```sh
 npm run typecheck
 npm test
 npm run build
 npm start
-# Shut down a local server with Ctrl-C when testing ends.
 ```
 
-### Sandbox compatibility probe
+Private Pascal runs independently on port 3015. Match `SHOP_API_KEY` / `SHOP_WEBHOOK_SECRET` with Pascal's server configuration, set `SHOP_WEBHOOK_URL` to its callback and `PASCAL_DEMO_URL` to its public demo route. These keys never go to browser code. Stop local servers when testing ends.
 
-```sh
-npm run sandbox:probe
-# Open the printed approval URL and approve with the sandbox buyer.
-npm run sandbox:probe -- ES-ORDER_REFERENCE_FROM_FIRST_COMMAND
-```
+### Strategy and maintenance
 
-The second command authorizes, captures the deposit, then captures the remaining balance. It prints actual IDs and `multiplePartialCaptureProven`. It never auto-approves an order. A buyer approval is required.
+`PAYPAL_CAPTURE_STRATEGY=single` is the default; `split` chooses the two-order fallback. The workspace can select a strategy per new reservation. Never switch an existing paid reservation's strategy or create a replacement deposit automatically.
 
-### Hosting later on Render
+Maintenance is disabled by default while final payment validation is deferred. After that validation, set `MAINTENANCE_ENABLED=true` to run the single-instance scheduler. `MAINTENANCE_INTERVAL_MS` defaults to 60 seconds; individual orders are normally reconciled no more than every ten minutes. Near-expiry cases need shop attention. The optional `POST /api/internal/maintenance` endpoint requires `Authorization: Bearer <MAINTENANCE_SECRET>` for an external scheduler. `npm run maintenance` executes one batch. These commands may call the real sandbox: do not run them as a substitute for deferred validation.
 
-A `render.yaml` blueprint is included for a Next.js Node web service. Deployment is intentionally deferred until local review. Use `npm ci && npm run build` and `npm start`, configure secrets in Render, and set `APP_URL` to the final HTTPS origin. Do not use Vercel for this project.
+### Hosting preparation
 
-The free Render filesystem is ephemeral. That is suitable only for a disposable sandbox demo; restart/redeploy can erase the ledger. For a durable demonstration, the owner must choose a service with a persistent disk, mount it, and set `STORE_DIR` to that mount. Do not treat the free ephemeral store as a reliable payment ledger. Run exactly one instance.
+`render.yaml` and a non-root `Dockerfile` are included. They have not been deployed. Render's free filesystem is ephemeral and the service can sleep: use it only for disposable sandbox state. For a durable ledger and timely maintenance, the owner must choose persistent storage and an awake single instance. The Docker volume is `/app/data`; set `STORE_DIR` to the actual persistent mount. Secrets belong in host environment variables, never the image.
 
-After hosting and durable-store configuration:
-
-```sh
-# APP_URL must be the deployed HTTPS origin.
-npm run webhook:register
-# Transfer the resulting PAYPAL_WEBHOOK_ID into the hosted environment.
-```
-
-This registers the sandbox app's webhook and appends its ID to the ignored local `.env`. Configure the hosted environment separately. Localhost cannot receive genuine PayPal callbacks without an explicitly configured HTTPS tunnel. A simulated webhook is never reported as real verification success. See [Render's Next.js instructions](https://render.com/docs/deploy-nextjs-app).
+After local review and hosting approval, set `APP_URL` to the deployed HTTPS origin. Register the sandbox webhook with `npm run webhook:register` and copy the returned `PAYPAL_WEBHOOK_ID` into the hosted environment. Localhost alone cannot receive genuine callbacks. A mock notification is not proof of postback verification SUCCESS. See [deployment instructions](docs/deployment.md) and [Render's Next.js guide](https://render.com/docs/deploy-nextjs-app).
 
 ## Architecture
 
 ```text
-Pascal server (private) ── authenticated API ──→ Entrega Segura (public code)
-       ↑ signed callback + status lookup              │
-Buyer/courier chat → AI parser → typed event → deterministic gate
-                                                     │
-                                     PayPal module → real Sandbox
-                                                     │
-                                        verified webhook → ledger
+Pascal backend (private) ── authenticated API ──→ Entrega Segura
+          ↑ signed callbacks / status lookup            │
+Chat / audio / image → AI event → deterministic gate → PayPal Sandbox
+                                            ↑                 │
+                                     verified webhook ←──────┘
+Maintenance: reconcile states / renew eligible holds / retry callbacks
+Guided view: same pure gate, browser-only illustrative money, no PayPal calls
 ```
 
-- `app/`: landing, `/judge`, `/tienda`, server APIs, same-origin writes, signed HttpOnly guest sessions.
-- `lib/gate/`: pure business rules; never calls the model or network.
-- `lib/paypal/`: sandbox client, stable request IDs, operation journal, capture/refund/void/reauthorization, webhook verification.
-- `lib/courier/`: ready-to-replace courier interface; labelled simulated LAAR and chat-code adapters.
-- `lib/ai/`: validated extraction, Spanish drafts, optional vision/Whisper.
-- `lib/store.ts`: SQLite WAL, reservations, operation intents, webhook deduplication by transmission and event ID, callback outbox. Single service process only.
-- `lib/orders.ts`: event processing and retry, explicit shop refund review, timestamped HMAC integration callbacks. Queued callbacks retry on later notifications or an explicit retry action; there is no background delivery worker yet.
+- `app/`: product site, guided/Sandbox judge workspace, shop panel, design-system reference and server routes.
+- `components/`: shared navigation, icons, composer, payment evidence, shop actions and interactive product examples.
+- `lib/gate/`: pure money policy; no model or network.
+- `lib/paypal/`: sandbox client, one-/two-order strategies, intent journal, refund, payout and webhook verification.
+- `lib/ai/`: extraction, vision, Whisper and read-only decision explanation.
+- `lib/courier/`: simulated LAAR and code-confirmation adapter interface.
+- `lib/demo/`: browser-only guided examples using the shared gate.
+- `lib/store.ts`: SQLite WAL ledger, immutable operation intents, deduplicated webhook IDs and persistent callback outbox.
+- `lib/maintenance.ts`: reconciliation, reauthorization, expiry escalation and callback retries. Opt-in scheduler through `instrumentation.ts`.
 
-No private Pascal implementation or production secrets are needed to run the independent demo. Shop panel access is scoped to the current judge session; it is not a production merchant admin system.
+This is a single-shop sandbox prototype. Guest sessions represent demo buyer/courier/reviewer roles; the panel is session-scoped, not a production multi-tenant admin system. Real courier identity, operational reconciliation and merchant onboarding remain production work outside the hackathon prototype.
+
+The monochrome system, local OFL-licensed font, image provenance, spacing, state components and accessible interactions are documented in [design foundations](docs/design-system.md).
 
 ## Tests
 
 ```sh
-npm test                       # deterministic unit/property tests; sandbox tests skipped
-npm run test:sandbox            # loads .env; includes real PayPal sandbox checks
-npm run eval:ai                 # live model calls; writes the full accuracy report
-node --env-file=.env node_modules/tsx/dist/cli.mjs scripts/verify-local.ts
-# Last command needs both local applications running with matching integration secrets.
+npm test                 # deterministic unit/property tests; real sandbox tests skipped
+npm run typecheck
+npm run build
+# Only at final account-validation stage:
+npm run test:sandbox     # loads .env and calls real PayPal Sandbox
+npm run eval:ai          # real AI calls, writes an evaluation report
 ```
 
-The sandbox suite has **eight real-API checks**: token, actual AUTHORIZE order, amount, direct PayPal create replay, unapproved authorization rejection, invalid authorization, webhook subscriptions, and an independent second order. These checks do **not** prove settlement. Three additional lifecycle checks require `SANDBOX_APPROVED_ORDER_ID` set to a locally stored reservation reference whose buyer has already approved. They remain skipped until that approval exists.
+Current unit coverage includes wrong codes, concurrent balance release, pending deposits, duplicate events, one refund intent, one-/two-order flows, changed payout intents, expired and aged authorization, failed renewal, persistent callback backoff, forged and out-of-order webhooks, and the guided scenarios. Property tests cover thousands of generated cases.
 
-Unit tests cover payment actions with an explicitly mocked PayPal transport, including concurrent release, pending deposit, repeated refund, aged and expired authorization, retry after a network-side error, forged webhook rejection, duplicate webhook delivery, and out-of-order authorization events. Gate property tests exercise thousands of generated cases, including wrong codes and resolved balances.
+The eight-test sandbox smoke suite remains opt-in. Three additional lifecycle checks require a buyer-approved locally stored reservation reference via `SANDBOX_APPROVED_ORDER_ID` (despite the historical name, its value is `ES-...`, not a PayPal ID). The compatibility probe creates a fresh sandbox order, waits for external buyer approval and then tests partial/final capture:
 
-[Local API-contract evidence](reports/local-contract.json) records the connection between the two local applications, guest ownership, signed claim, cross-origin protection, authenticated/forged callbacks, and real AI parsing without charging an unapproved order. This is separate from PayPal webhook verification.
+```sh
+npm run sandbox:probe
+# Approve the printed URL with a sandbox buyer, then:
+npm run sandbox:probe -- ES-REFERENCE
+```
+
+`reports/local-contract.json` is historical evidence of 17 earlier local API-contract checks; it is not a claim that this revision's real payment lifecycle has been rerun. New validation results are recorded separately. Final external checks are intentionally left for the final stage; the application does not display an invented success.
 
 ## License
 
-[MIT](LICENSE). This repository contains newly implemented Entrega Segura code. Pascal Studio's private application remains private.
-
-Additional evidence: [one synthetic voice-note check](reports/audio-smoke.json), [one fictional image-input check](reports/vision-smoke.json). These are functionality checks, not accuracy benchmarks.
+[MIT](LICENSE) for the new Entrega Segura code. DM Sans is distributed under its [SIL Open Font License](public/fonts/OFL.txt). Pascal Studio's application stays private. Visual references are principles drawn from public Nubank and ElevenLabs material, not copied brand assets or proprietary design-system components.

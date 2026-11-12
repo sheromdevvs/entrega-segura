@@ -1,0 +1,9 @@
+.git
+node_modules
+.next
+.data
+.env
+.env.*
+LOCAL_HANDOFF.md
+reports
+*.tsbuildinfo

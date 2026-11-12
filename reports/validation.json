@@ -1,29 +1,35 @@
 {
-  "at": "2026-11-12T05:41:13.513753+00:00",
+  "at": "2026-11-12T06:28:50.920035+00:00",
+  "revision": "monochrome-v2",
   "typecheck": "passed",
   "productionBuild": "passed",
-  "deterministicTestsPassed": 35,
-  "realSandboxApiTestsPassed": 8,
-  "buyerApprovedLifecycleTestsSkipped": 3,
-  "localIntegrationChecks": {
-    "passed": 17,
-    "total": 17
+  "privatePascalTypecheck": "passed",
+  "localTests": {
+    "passed": 58,
+    "skipped": 11,
+    "skips": "8 API Sandbox + 3 buyer lifecycle; intentionally deferred",
+    "newPaymentTestsUseMockTransport": true
   },
-  "textParser": {
-    "correct": 22,
-    "total": 24,
-    "accuracy": 0.9166666666666666
+  "runtimeAuditVulnerabilities": 0,
+  "realPayPalLifecycleValidatedThisRevision": false,
+  "historicalEvidenceNotRerun": {
+    "realSandboxApiChecksPassed": 8,
+    "localContractChecksPassed": 17,
+    "textParser": {
+      "correct": 22,
+      "total": 24
+    }
   },
-  "syntheticAudioSmoke": "passed",
-  "fictionalImageSmoke": "passed",
   "pending": [
-    "buyer-approved partial and final captures",
+    "buyer-approved single and split strategy account validation",
     "real sandbox void/refund lifecycle scenarios",
     "real aged authorization reauthorization",
-    "real account payout",
-    "deployed HTTPS webhook verification SUCCESS",
-    "hosted URL",
+    "real account payout capability",
+    "authorized HTTPS hosting and verified genuine webhook",
+    "final presentation recording",
     "owner-authorized main merges"
   ],
-  "productionChanges": false
+  "productionChanges": false,
+  "deploymentPerformed": false,
+  "dockerBuildExecuted": false
 }

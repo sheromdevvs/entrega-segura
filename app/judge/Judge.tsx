@@ -1,751 +1,1164 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import type { Reservation } from "@/lib/types";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import type { Reservation, DeliveryEvent, EventKind } from "@/lib/types";
 import type { ParsedMessage } from "@/lib/ai";
-const usd = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
-    n / 100,
-  );
-const labels: Record<string, string> = {
-  awaiting_approval: "Esperando aprobación",
-  authorized: "Autorizado",
-  deposit_pending: "Anticipo pendiente",
-  held: "Saldo autorizado",
-  released: "Saldo cobrado",
-  voided: "Saldo anulado",
-  refunded: "Reembolso registrado",
-  review: "Revisión necesaria",
-};
+import {
+  catalogue,
+  usd,
+  stateLabels,
+  eventLabels,
+  ledger,
+  productImage,
+} from "@/lib/presentation";
+import {
+  createPreview,
+  previewEvent,
+  previewRefund,
+  previewStorageKey,
+} from "@/lib/demo/preview";
+import { Icon, type IconName } from "@/components/Icon";
+import { MessageComposer } from "@/components/MessageComposer";
+import {
+  PaymentEvidence,
+  downloadEvidence,
+} from "@/components/PaymentEvidence";
+import { ShopActions } from "@/components/ShopActions";
+const tabs = [
+  { id: "conversation", label: "La conversación", icon: "wave" },
+  { id: "evidence", label: "Evidencia de pago", icon: "document" },
+  { id: "operations", label: "Revisión de tienda", icon: "grid" },
+] as const;
+type Tab = (typeof tabs)[number]["id"];
 export default function Judge() {
-  const search = useSearchParams();
-  const [order, setOrder] = useState<Reservation | null>(null),
+  const search = useSearchParams(),
+    router = useRouter();
+  const guided = search.get("mode") !== "sandbox" && !search.get("ref");
+  const [preview, setPreview] = useState<Reservation>(() => createPreview()),
+    [ready, setReady] = useState(false),
+    [order, setOrder] = useState<Reservation | null>(null),
     [orders, setOrders] = useState<Reservation[]>([]),
     [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [product, setProduct] = useState("hoodie"),
-    [text, setText] = useState("Ya entregué el pedido. El código es "),
-    [ai, setAi] = useState<ParsedMessage | null>(null),
-    [photo, setPhoto] = useState<string>(),
-    [photoName, setPhotoName] = useState(""),
-    [refundAmount, setRefundAmount] = useState("3.00");
-  const load = useCallback(async () => {
-    const r = await fetch("/api/orders");
-    const d = await r.json();
-    if (d.orders) setOrders(d.orders);
-    return d.orders as Reservation[] | undefined;
-  }, []);
+    [strategy, setStrategy] = useState("single"),
+    [tab, setTab] = useState<Tab>("conversation"),
+    [preset, setPreset] = useState(""),
+    [config, setConfig] = useState<{
+      paypalConfigured: boolean;
+      aiConfigured: boolean;
+      webhookConfigured: boolean;
+    }>();
+  const current = guided ? preview : order;
   useEffect(() => {
-    load()
-      .then((items) => {
-        const ref = search.get("ref");
-        const found =
-          items?.find((x) => x.ref === ref) || (!ref ? items?.[0] : undefined);
-        if (found) {
-          setOrder(found);
-          setAi(
-            found.events.findLast((e) => e.interpretation)?.interpretation ||
-              null,
+    try {
+      const raw = localStorage.getItem(previewStorageKey);
+      if (raw) {
+        const r = JSON.parse(raw);
+        if (
+          r.owner === "browser-preview" &&
+          Array.isArray(r.captures) &&
+          Array.isArray(r.events) &&
+          Array.isArray(r.decisions) &&
+          Array.isArray(r.refunds) &&
+          Number.isInteger(r.total) &&
+          Number.isInteger(r.deposit) &&
+          r.currency === "USD"
+        ) {
+          setPreview(r);
+          setProduct(
+            catalogue.find((p) => p.name === r.product)?.id || "hoodie",
           );
         }
-      })
-      .catch(() => setError("No se pudieron cargar los pedidos."));
-  }, [load, search]);
+      }
+    } catch {}
+    setReady(true);
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then(setConfig)
+      .catch(() => {});
+  }, []);
   useEffect(() => {
-    if (!order?.ref) return;
-    const id = setInterval(async () => {
+    if (ready) localStorage.setItem(previewStorageKey, JSON.stringify(preview));
+  }, [preview, ready]);
+  const load = useCallback(async () => {
+    const response = await fetch("/api/orders"),
+      data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    setOrders(data.orders);
+    return data.orders as Reservation[];
+  }, []);
+  useEffect(() => {
+    if (guided) return;
+    let active = true;
+    load()
+      .then((items) => {
+        if (!active) return;
+        const ref = search.get("ref");
+        const selected =
+          items.find((x) => x.ref === ref) || (!ref ? items[0] : undefined);
+        setOrder(selected || null);
+        if (ref && !selected)
+          setError(
+            "Este pedido pertenece a otra sesión o ya no está disponible. Puede crear uno nuevo.",
+          );
+      })
+      .catch((e) => setError(e.message));
+    return () => {
+      active = false;
+    };
+  }, [guided, load, search]);
+  useEffect(() => {
+    if (guided || !order?.ref) return;
+    let active = true;
+    const interval = setInterval(async () => {
       try {
         const r = await fetch(`/api/orders/${order.ref}`);
-        if (r.ok) setOrder(await r.json());
+        if (r.ok && active) setOrder(await r.json());
       } catch {}
-    }, 5000);
-    return () => clearInterval(id);
-  }, [order?.ref]);
-  async function action(body: Record<string, unknown>) {
-    if (!order) return;
-    setBusy(String(body.action));
+    }, 6000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [guided, order?.ref]);
+  function newExample(id: string) {
+    return {
+      ...createPreview(id),
+      ref: `VISTA-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+    };
+  }
+  function reset() {
+    setPreview(newExample(product));
+    setTab("conversation");
     setError("");
+    setNotice("Nuevo ejemplo listo. No se ha llamado a PayPal.");
+    setPreset("");
+  }
+  async function create() {
+    setError("");
+    setNotice("");
+    if (guided) {
+      reset();
+      return;
+    }
+    setBusy("create");
     try {
-      const r = await fetch(`/api/orders/${order.ref}`, {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: product, paymentStrategy: strategy }),
+      });
+      const d = await response.json();
+      if (!response.ok) throw new Error(d.error);
+      setOrder(d);
+      setTab("conversation");
+      await load();
+      router.replace(`/judge?mode=sandbox&ref=${d.ref}`, { scroll: false });
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo crear el checkout.",
+      );
+      await load().catch(() => {});
+    } finally {
+      setBusy("");
+    }
+  }
+  async function action(body: Record<string, unknown>) {
+    if (!current) return;
+    setError("");
+    setNotice("");
+    if (guided) {
+      try {
+        if (body.action === "refund")
+          setPreview(previewRefund(current, Number(body.amount)));
+        if (body.action === "maintenance")
+          setPreview({
+            ...current,
+            maintenance: {
+              checkedAt: new Date().toISOString(),
+              status: "ok",
+              message:
+                "La vista guiada usa una autorización ilustrativa vigente. La revisión real está disponible en Sandbox.",
+            },
+          });
+        if (body.action === "refresh")
+          setNotice(
+            "Los importes de esta vista son ilustrativos. PayPal no se ha consultado.",
+          );
+        if (body.action === "payout") {
+          if (
+            !current.captures.some(
+              (c) => c.role === "balance" && c.status === "COMPLETED",
+            )
+          )
+            throw new Error("Primero debe completarse una entrega.");
+          const amount = Number(body.amount);
+          if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 650)
+            throw new Error(
+              "El pago de demostración debe estar entre $0.01 y $6.50.",
+            );
+          setPreview({
+            ...current,
+            payout: {
+              mode: "ILLUSTRATIVE",
+              status: "SIMULATED",
+              amount: usd(amount),
+              note: String(body.note),
+            },
+          });
+        }
+        return;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Revise la acción.");
+        return;
+      }
+    }
+    setBusy(String(body.action));
+    try {
+      const response = await fetch(`/api/orders/${current.ref}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const d = await r.json();
+      const d = await response.json();
       if (d.order) setOrder(d.order);
-      if (!r.ok) throw new Error(d.error);
-      if (d.ai) setAi(d.ai);
+      if (!response.ok) throw new Error(d.error);
+      setNotice(
+        body.action === "approve"
+          ? "Aprobación comprobada y estado de pago actualizado."
+          : "La operación se actualizó.",
+      );
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Action failed");
+      setError(e instanceof Error ? e.message : "La acción necesita revisión.");
     } finally {
       setBusy("");
     }
   }
-  async function create() {
-    setBusy("create");
+  async function message(text: string, photo?: string) {
+    if (!current) return;
+    setBusy("message");
     setError("");
-    setAi(null);
-    setPhoto(undefined);
-    setPhotoName("");
+    setNotice("");
     try {
-      const r = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId: product }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setOrder(d);
-      await load();
-      window.history.replaceState(null, "", `/judge?ref=${d.ref}`);
+      if (guided) {
+        const response = await fetch("/api/ai/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, photo }),
+        });
+        const d = await response.json();
+        if (!response.ok) throw new Error(d.error);
+        const interpretation = d.ai as ParsedMessage;
+        const eventId = crypto.randomUUID();
+        const next = previewEvent(current, {
+          id: eventId,
+          kind: interpretation.kind,
+          code: text.match(/\b\d{4}\b/)?.[0],
+          at: new Date().toISOString(),
+          source: "chat",
+          text,
+          photo,
+          hasPhoto: !!photo,
+          interpretation,
+        });
+        setPreview(next);
+        try {
+          const explanationResponse = await fetch("/api/ai/explain", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(next.events.at(-1)?.decision),
+          });
+          if (explanationResponse.ok) {
+            const explained = await explanationResponse.json();
+            if (explained.explanation)
+              setPreview((previous) => ({
+                ...previous,
+                events: previous.events.map((e) =>
+                  e.id === eventId
+                    ? { ...e, gateExplanation: explained.explanation }
+                    : e,
+                ),
+              }));
+          }
+        } catch {}
+      } else {
+        const response = await fetch(`/api/orders/${current.ref}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "message", text, photo }),
+        });
+        const d = await response.json();
+        if (d.order) setOrder(d.order);
+        if (!response.ok) throw new Error(d.error);
+        await load();
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Checkout failed");
-      await load();
+      setError(
+        e instanceof Error ? e.message : "No se pudo interpretar el mensaje.",
+      );
     } finally {
       setBusy("");
     }
   }
-  async function attach(file: File | undefined) {
-    if (!file) {
-      setPhoto(undefined);
-      setPhotoName("");
+  function scenario(kind: EventKind) {
+    if (!current) return;
+    setError("");
+    setNotice("");
+    if (!guided) {
+      if (kind === "defect_reported") {
+        setPreset("El producto llegó roto. Adjunto una foto del daño.");
+        document.getElementById("delivery-message")?.focus();
+        return;
+      }
+      void action({ action: "scenario", scenario: kind });
       return;
     }
-    if (
-      file.size > 5 * 1024 * 1024 ||
-      !/^image\/(png|jpeg|webp)$/.test(file.type)
-    ) {
-      setError("Use una imagen PNG, JPG o WebP de hasta 5 MB.");
+    const e = (
+      type: EventKind,
+      text: string,
+      code?: string,
+    ): DeliveryEvent => ({
+      id: crypto.randomUUID(),
+      kind: type,
+      at: new Date().toISOString(),
+      source: "simulated_laar",
+      text,
+      code,
+    });
+    let r = current;
+    if (kind === "defect_reported") {
+      r = newExample("mug");
+      setProduct("mug");
+      r = previewEvent(
+        r,
+        e("delivered", "El comprador recibió el pedido completo.", r.code),
+      );
+      r = previewEvent(r, {
+        ...e(
+          kind,
+          "La taza llegó con una grieta. Adjunto una imagen sintética para revisar el ejemplo.",
+        ),
+        hasPhoto: true,
+        photo: "/images/defect-evidence.webp",
+      });
+      setPreview(r);
+      setTab("operations");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPhoto(String(reader.result));
-      setPhotoName(file.name);
+    if (["released", "voided", "refunded"].includes(r.state)) {
+      r = newExample(
+        catalogue.find((p) => p.name === r.product)?.id || product,
+      );
+      setNotice("Se cargó otro ejemplo para explorar este desenlace.");
+    }
+    const texts: Partial<Record<EventKind, string>> = {
+      delivered: `Ya entregué el pedido completo. El código es ${r.code}.`,
+      refused: "El comprador rechazó la entrega en la puerta.",
+      not_home: "No había nadie en casa. Dejé un aviso.",
+      partial_delivery:
+        "Solo se entregó una parte del pedido; falta un artículo.",
     };
-    reader.readAsDataURL(file);
+    setPreview(
+      previewEvent(
+        r,
+        e(
+          kind,
+          texts[kind] || "Mensaje por revisar",
+          kind === "delivered" ? r.code : undefined,
+        ),
+      ),
+    );
+    setTab("conversation");
   }
-  async function audio(file: File | undefined) {
-    if (!file) return;
-    setBusy("audio");
-    setError("");
-    try {
-      const form = new FormData();
-      form.set("audio", file);
-      const r = await fetch("/api/ai/transcribe", {
-        method: "POST",
-        body: form,
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setText(d.text);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Audio failed");
-    } finally {
-      setBusy("");
-    }
-  }
-  const deposit =
-    order?.captures
-      .filter((x) => x.role === "deposit" && x.status === "COMPLETED")
-      .reduce((a, c) => a + c.amount, 0) || 0;
-  const balance =
-    order?.captures
-      .filter((x) => x.role === "balance" && x.status === "COMPLETED")
-      .reduce((a, c) => a + c.amount, 0) || 0;
-  const held =
-    order && ["held", "authorized", "deposit_pending"].includes(order.state)
-      ? order.total - deposit
-      : 0;
-  const decision = order?.decisions.at(-1);
-  const canEvent = order?.state === "held";
-  const canDefect = order?.state === "released" || order?.state === "held";
+  const amounts = current ? ledger(current) : null,
+    last = current?.events.at(-1),
+    decision = last?.decision || current?.decisions.at(-1),
+    ai = last?.interpretation;
+  const awaiting =
+    current &&
+    ["awaiting_approval", "awaiting_balance_approval", "authorized"].includes(
+      current.state,
+    );
+  const done =
+    current && ["released", "voided", "refunded"].includes(current.state);
+  const phases = [
+    {
+      title: "Aprobar la compra",
+      description: guided
+        ? "Ejemplo de una aprobación"
+        : current?.paypalOrderId || "Checkout del comprador",
+      done: guided || !!current?.authorizationId,
+    },
+    {
+      title: "Empezar a crear",
+      description: "Anticipo para producción",
+      done: !!amounts?.deposit,
+    },
+    {
+      title: "Entender la entrega",
+      description: "Mensaje, nota de voz o imagen",
+      done: !!current?.events.length,
+    },
+    {
+      title: "Resolver el saldo",
+      description: "Regla de entrega aplicada",
+      done: !!done,
+    },
+    ...(!guided
+      ? [
+          {
+            title: "Verificar la notificación",
+            description: current?.lastWebhook
+              ? "Firma confirmada por PayPal"
+              : "Esperando webhook auténtico",
+            done: !!current?.lastWebhook,
+          },
+        ]
+      : []),
+  ];
   return (
-    <main className="workspace">
-      <div className="workspace-head">
-        <div>
-          <div className="eyebrow">
-            <span className="live-dot" /> INTERACTIVE SANDBOX / JUDGE DEMO
-          </div>
-          <h1>
-            Follow the <em>money.</em>
-          </h1>
-          <p>A custom order, from one approval to a verified delivery.</p>
+    <main id="content" className="workspace">
+      <div className="workspace-top">
+        <div className="breadcrumbs">
+          <Link href="/">Entrega Segura</Link>
+          <span>/</span>
+          <span>Judge demo</span>
         </div>
-        <div className="sandbox-badge">
-          <span>◈</span>
-          <div>
-            PayPal Sandbox<small>Fictional orders · No real money</small>
-          </div>
+        <div className="mode-switch" aria-label="Modo de demostración">
+          <button
+            className={guided ? "is-selected" : ""}
+            aria-pressed={guided}
+            onClick={() => {
+              router.push("/judge?mode=guided");
+              setError("");
+              setNotice("");
+            }}
+          >
+            Vista guiada
+          </button>
+          <button
+            className={!guided ? "is-selected" : ""}
+            aria-pressed={!guided}
+            onClick={() => {
+              router.push("/judge?mode=sandbox");
+              setError("");
+              setNotice("");
+            }}
+          >
+            PayPal Sandbox <Icon name="northeast" size={12} />
+          </button>
         </div>
       </div>
-      <div className="demo-toolbar">
-        <div className="toolbar-product">
-          <span className="product-thumb">♧</span>
+      <div className="workspace-heading">
+        <div>
+          <span className="eyebrow">UN PEDIDO, DE PRINCIPIO A FIN</span>
+          <h1>
+            Todo llega.
+            <br />
+            <span>Todo queda claro.</span>
+          </h1>
+        </div>
+        <div className="workspace-intro">
+          <p>
+            {guided
+              ? "Recorra la compra, la entrega y sus posibles desenlaces. Sin entrar a PayPal."
+              : "Siga una orden real de PayPal Sandbox. Cada movimiento conserva su respuesta y sus IDs."}
+          </p>
+          <span className="mode-caption">
+            <span className="tiny-dot" />
+            {guided
+              ? "Movimientos ilustrativos · IA real al escribir"
+              : "Integración Sandbox · Sin dinero real"}
+          </span>
+        </div>
+      </div>
+      <div className={`mode-notice ${guided ? "is-guided" : ""}`}>
+        <Icon name={guided ? "eye" : "shield"} size={17} />
+        <span>
+          {guided
+            ? "Vista guiada: puede explorar todas las reglas. Los cobros y reembolsos se ilustran en este navegador; no se envían a PayPal."
+            : "Entorno de prueba: la aprobación debe ocurrir en PayPal Sandbox. No se simulan cobros ni firmas verificadas."}
+        </span>
+      </div>
+      <div className="order-toolbar">
+        <div className="toolbar-fields">
           <label>
-            Pedido de demostración
+            Producto
             <select
               value={product}
               onChange={(e) => setProduct(e.target.value)}
             >
-              <option value="hoodie">Hoodie personalizado · $24</option>
-              <option value="mug">Taza personalizada · $12</option>
-              <option value="frame">Cuadro de mascota · $13</option>
+              {catalogue.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {usd(p.total)}
+                </option>
+              ))}
             </select>
           </label>
+          {!guided && (
+            <label>
+              Aprobación
+              <select
+                value={strategy}
+                onChange={(e) => setStrategy(e.target.value)}
+              >
+                <option value="single">Una aprobación</option>
+                <option value="split">Dos aprobaciones · compatibilidad</option>
+              </select>
+            </label>
+          )}
         </div>
-        <div className="toolbar-controls">
-          {orders.length > 0 && (
+        <div className="toolbar-actions">
+          {!guided && orders.length > 0 && (
             <select
-              aria-label="Cambiar pedido"
+              aria-label="Elegir pedido Sandbox"
               value={order?.ref || ""}
-              onChange={(e) => {
-                setOrder(orders.find((x) => x.ref === e.target.value) || null);
-                setAi(null);
-              }}
+              onChange={(e) =>
+                router.replace(`/judge?mode=sandbox&ref=${e.target.value}`, {
+                  scroll: false,
+                })
+              }
             >
-              {!order && <option value="">Seleccione un pedido</option>}
+              <option value="" disabled>
+                Sus pedidos
+              </option>
               {orders.map((r) => (
                 <option key={r.ref} value={r.ref}>
-                  {r.ref} · {labels[r.state]}
+                  {r.ref} · {stateLabels[r.state]}
                 </option>
               ))}
             </select>
           )}
-          <button className="button primary" disabled={!!busy} onClick={create}>
-            {busy === "create"
-              ? "Creating sandbox checkout…"
-              : "+ Start a new journey"}
+          <button
+            className="button button-black"
+            disabled={!!busy}
+            onClick={create}
+          >
+            {busy === "create" ? (
+              <span className="spinner" />
+            ) : (
+              <Icon name="plus" size={16} />
+            )}{" "}
+            {guided ? "Reiniciar ejemplo" : "Crear pedido Sandbox"}
           </button>
         </div>
       </div>
       {error && (
-        <div role="alert" className="error">
-          <strong>Action needs attention</strong>
-          <span>{error}</span>
+        <div className="feedback feedback-error" role="alert">
+          <Icon name="info" size={19} />
+          <div>
+            <strong>Hace falta revisar un detalle.</strong>
+            <p>{error}</p>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Cerrar aviso"
+            onClick={() => setError("")}
+          >
+            <Icon name="close" size={16} />
+          </button>
         </div>
       )}
-      {!order ? (
-        <section className="empty-state">
-          <div className="empty-orbit">↗</div>
-          <h2>One order. Every step visible.</h2>
-          <p>
-            Start a journey to create a real PayPal Sandbox order. Approve with
-            a sandbox buyer, then choose a delivery outcome.
-          </p>
-          <button className="button primary" onClick={create} disabled={!!busy}>
-            Create the first sandbox order →
+      {notice && (
+        <div className="feedback" role="status">
+          <Icon name="check" size={17} />
+          <p>{notice}</p>
+          <button
+            className="icon-button"
+            aria-label="Cerrar aviso"
+            onClick={() => setNotice("")}
+          >
+            <Icon name="close" size={16} />
           </button>
-          <small>
-            Needs sandbox buyer approval. No auto-approval is simulated.
-          </small>
+        </div>
+      )}
+      {!current ? (
+        <section className="workspace-empty">
+          <div className="empty-photo">
+            <img
+              src="/images/delivery-editorial.webp"
+              alt="Una entrega de regalo personalizada"
+            />
+          </div>
+          <div>
+            <span className="eyebrow">PAYPAL SANDBOX</span>
+            <h2>
+              El primer pedido
+              <br />
+              empieza con una aprobación.
+            </h2>
+            <p>
+              Elija un producto y cree el checkout. La tienda recibe el anticipo
+              después de que el comprador apruebe el pago de prueba.
+            </p>
+            <button
+              className="button button-black"
+              onClick={create}
+              disabled={!!busy}
+            >
+              Crear pedido <Icon name="arrow" size={17} />
+            </button>
+            <div className="setup-summary">
+              <span>
+                <Icon
+                  name={config?.paypalConfigured ? "check" : "clock"}
+                  size={14}
+                />{" "}
+                PayPal{" "}
+                {config?.paypalConfigured ? "configurado" : "por configurar"}
+              </span>
+              <span>
+                <Icon
+                  name={config?.aiConfigured ? "check" : "clock"}
+                  size={14}
+                />{" "}
+                IA {config?.aiConfigured ? "configurada" : "por configurar"}
+              </span>
+            </div>
+            <p className="fine-print">
+              Use una cuenta personal de PayPal Sandbox. La vista guiada está
+              disponible sin esa aprobación.
+            </p>
+          </div>
         </section>
       ) : (
         <>
-          {order.source === "pascal" && (
-            <a
-              className="text-link"
-              style={{ display: "inline-block", marginBottom: 18 }}
-              href="/api/integrations/pascal/return"
-            >
-              ← View this order in Pascal Studio
-            </a>
-          )}
-          <section className="money-strip">
-            <div className="order-identity">
-              <small>
-                {order.source === "pascal"
-                  ? "PASCAL INTEGRATION"
-                  : "FICTIONAL PASCAL ORDER"}
-              </small>
-              <strong>{order.product}</strong>
-              <code>{order.ref}</code>
-              <span className={`state-tag ${order.state}`}>
-                {labels[order.state]}
-              </span>
-            </div>
-            <div>
-              <small>Order total</small>
-              <strong>{usd(order.total)}</strong>
-              <span>USD · sin envío</span>
-            </div>
-            <div>
-              <small>Production deposit</small>
-              <strong>{usd(deposit)}</strong>
-              <span>{deposit ? "Captured" : "Pending approval"}</span>
-            </div>
-            <div>
-              <small>Balance authorized</small>
-              <strong>{usd(held)}</strong>
-              <span>Time-limited hold</span>
-            </div>
-            <div>
-              <small>Balance collected</small>
-              <strong className={balance ? "green" : ""}>{usd(balance)}</strong>
-              <span>
-                {order.state === "voided"
-                  ? "Remaining hold voided"
-                  : "On verified delivery"}
-              </span>
-            </div>
-          </section>
-          <div className="journey-layout">
-            <aside className="journey-sidebar">
-              <div className="section-label">THE PAYMENT JOURNEY</div>
-              {[
-                {
-                  title: "Buyer approval",
-                  desc: order.paypalOrderId || "Create order",
-                  done: !!order.authorizationId,
-                },
-                {
-                  title: "Fund production",
-                  desc:
-                    order.captures.find((c) => c.role === "deposit")?.id ||
-                    "Capture 50% · final_capture: false",
-                  done: !!deposit,
-                },
-                {
-                  title: "Delivery evidence",
-                  desc: order.events.length
-                    ? `${order.events.length} event(s) received`
-                    : "Chat + code or courier event",
-                  done: !!order.events.length,
-                },
-                {
-                  title: "Resolve the balance",
-                  desc:
-                    order.captures.find((c) => c.role === "balance")?.id ||
-                    (order.state === "voided"
-                      ? "Authorization voided"
-                      : "Deterministic gate decides"),
-                  done: !!balance || order.state === "voided",
-                },
-                {
-                  title: "Verified webhook",
-                  desc:
-                    order.lastWebhook?.type ||
-                    "Waiting for PayPal notification",
-                  done: !!order.lastWebhook,
-                },
-              ].map((s, i) => (
-                <div
-                  className={`journey-step ${s.done ? "done" : ""}`}
-                  key={s.title}
-                >
-                  <span>{s.done ? "✓" : `0${i + 1}`}</span>
-                  <div>
-                    <strong>{s.title}</strong>
-                    <small>{s.desc}</small>
-                  </div>
-                </div>
-              ))}
-              <div className="sidebar-note">
-                <strong>No screenshots to check.</strong>
-                <p>
-                  PayPal IDs and the payment ledger are shown below. A webhook
-                  counts only after signature verification succeeds.
-                </p>
+          <div className="selected-order">
+            <div className="selected-order-product">
+              <img src={productImage(current.product)} alt={current.product} />
+              <div>
+                <span>
+                  {current.source === "pascal"
+                    ? "PASCAL STUDIO / INTEGRACIÓN"
+                    : "PASCAL STUDIO / PEDIDO FICTICIO"}
+                </span>
+                <strong>{current.product}</strong>
+                <code>{current.ref}</code>
               </div>
-            </aside>
-            <div className="journey-content">
-              {order.state === "awaiting_approval" ||
-              order.state === "authorized" ? (
-                <section className="approval-panel">
-                  <span className="eyebrow">01 / BUYER APPROVAL</span>
-                  <h2>Primero, su aprobación.</h2>
-                  <p>
-                    Autorice {usd(order.total)} en PayPal Sandbox. Se cobrará un
-                    anticipo de {usd(order.deposit)} para fabricar su producto.
-                    El saldo se cobrará al confirmar la entrega.
-                  </p>
-                  <div className="policy-note">
-                    Si rechaza la entrega de un producto personalizado, se anula
-                    el saldo. El anticipo se conserva para cubrir la producción.
-                    Un defecto requiere revisión de la tienda; sus derechos y
-                    las disputas de PayPal siguen aplicando.
-                  </div>
-                  <div className="hero-actions">
-                    {order.approvalUrl ? (
-                      <a
-                        className="button paypal"
-                        href={order.approvalUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Approve in PayPal Sandbox ↗
-                      </a>
-                    ) : (
-                      <button
-                        className="button primary"
-                        onClick={() => action({ action: "retry_checkout" })}
-                        disabled={!!busy}
-                      >
-                        Retry checkout creation
-                      </button>
-                    )}
-                    <button
-                      className="button secondary"
-                      onClick={() => action({ action: "approve" })}
-                      disabled={!!busy}
-                    >
-                      {busy === "approve"
-                        ? "Checking approval…"
-                        : "I approved → Check & capture deposit"}
-                    </button>
-                  </div>
-                  <small className="muted">
-                    Use a PayPal sandbox personal account. Your normal PayPal
-                    login will not work here.
-                  </small>
-                </section>
-              ) : null}
-              <div className="chat-grid">
-                <section className="phone">
-                  <div className="phone-header">
-                    <span className="avatar">D</span>
-                    <div>
-                      Daniela R.<small>Buyer · Chat simulator</small>
-                    </div>
-                    <span className="phone-menu">···</span>
-                  </div>
-                  <div className="phone-body">
-                    <span className="chat-date">PEDIDO FICTICIO · QUITO</span>
-                    <div className="bubble">
-                      Buenas tardes, quisiera mi regalo personalizado.
-                      <small>10:02</small>
-                    </div>
-                    <div className="bubble outgoing">
-                      Con gusto. Su total es {usd(order.total)}. El anticipo es{" "}
-                      {usd(order.deposit)} y el saldo se cobra cuando reciba el
-                      pedido.<small>10:03 ✓✓</small>
-                    </div>
-                    <div className="bubble">
-                      ¿Y si no me lo entregan?<small>10:03</small>
-                    </div>
-                    <div className="bubble outgoing">
-                      Sin entrega confirmada, no se cobra el saldo. Si hay un
-                      problema, revisamos su caso.<small>10:04 ✓✓</small>
-                    </div>
-                    {deposit > 0 && (
-                      <div className="chat-receipt">
-                        <span>✓</span>
-                        <strong>Anticipo registrado</strong>
-                        <small>{usd(deposit)} · PayPal Sandbox</small>
-                      </div>
-                    )}
-                    <div className="code-card">
-                      <small>SU CÓDIGO DE ENTREGA</small>
-                      <strong>
-                        {order.code.split("").map((n, i) => (
-                          <span key={i}>{n}</span>
-                        ))}
-                      </strong>
-                      <p>Compártalo al recibir el pedido completo.</p>
-                    </div>
-                  </div>
-                  <div className="phone-foot">
-                    ◌ Simulated WhatsApp · no messages sent
-                  </div>
-                </section>
-                <section className="phone courier">
-                  <div className="phone-header">
-                    <span className="avatar courier-avatar">↗</span>
-                    <div>
-                      Entrega en camino
-                      <small>Courier / buyer · Chat simulator</small>
-                    </div>
-                    <span className="phone-menu">···</span>
-                  </div>
-                  <div className="phone-body">
-                    <span className="chat-date">
-                      MESSAGES → AI → DELIVERY EVENT
-                    </span>
-                    <div className="bubble">
-                      Entiendo lo que pasó en la entrega. Cuénteme con sus
-                      palabras o adjunte una nota de voz.
-                    </div>
-                    {order.events.slice(-3).map((e) => (
-                      <div className="bubble outgoing" key={e.id}>
-                        {e.text}
-                        <small>
-                          {e.source === "simulated_laar"
-                            ? "SIMULATED LAAR"
-                            : e.kind}
-                        </small>
-                      </div>
-                    ))}
-                    {ai && (
-                      <div className="ai-card">
-                        <span>✳ AI INTERPRETATION</span>
-                        <strong>{ai.kind}</strong>
-                        <p>{ai.explanation}</p>
-                        <small>Draft reply: “{ai.reply}”</small>
-                        <small>
-                          {ai.provider} · {ai.model}
-                        </small>
-                      </div>
-                    )}
-                  </div>
-                  <div className="chat-compose">
-                    <label className="sr-only" htmlFor="message">
-                      Mensaje de comprador o repartidor
-                    </label>
-                    <textarea
-                      id="message"
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      placeholder="Ej.: No había nadie, dejé aviso."
-                    />
-                    <div className="compose-bottom">
-                      <div className="attachments">
-                        <label title="Adjuntar foto">
-                          ▧
-                          <input
-                            aria-label="Adjuntar foto del defecto"
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp"
-                            onChange={(e) => attach(e.target.files?.[0])}
-                          />
-                        </label>
-                        <label title="Transcribir nota de voz">
-                          ♫
-                          <input
-                            aria-label="Transcribir nota de voz"
-                            type="file"
-                            accept="audio/*"
-                            onChange={(e) => audio(e.target.files?.[0])}
-                          />
-                        </label>
-                        {photoName && <small>{photoName}</small>}
-                      </div>
-                      <button
-                        className="send"
-                        aria-label="Interpretar mensaje y aplicar reglas"
-                        disabled={!!busy || !text.trim()}
-                        onClick={() =>
-                          action({ action: "message", text, photo })
-                        }
-                      >
-                        {busy === "message" ? "…" : "↑"}
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-              <section className="gate-panel">
-                <div className="gate-title">
-                  <span className="gate-symbol">⌘</span>
-                  <div>
-                    <span className="eyebrow">DETERMINISTIC DELIVERY GATE</span>
-                    <h3>
-                      {decision
-                        ? decision.action.replace("_", " ")
-                        : "Waiting for delivery evidence"}
-                    </h3>
-                  </div>
-                  <span className="pill">Rules, never the model</span>
-                </div>
-                <p>
-                  {decision?.reason ||
-                    "La IA interpreta el mensaje. El código, el estado del pago y la política determinan si se cobra, se espera o se pide revisión."}
-                </p>
-                {order.lastError && (
-                  <>
-                    <p className="error-inline">{order.lastError}</p>
-                    <button
-                      className="button secondary"
-                      disabled={!!busy}
-                      onClick={() => action({ action: "retry_event" })}
-                    >
-                      Retry pending action safely
-                    </button>
-                  </>
-                )}
-              </section>
-              <section className="scenarios">
-                <div>
-                  <span className="section-label">EXPLORE ANOTHER OUTCOME</span>
-                  <p>
-                    These buttons inject labelled simulated courier events.
-                    Start a new order for each final outcome.
-                  </p>
-                </div>
-                <div className="scenario-buttons">
-                  <button
-                    disabled={!!busy || !canEvent}
-                    onClick={() =>
-                      action({ action: "scenario", scenario: "delivered" })
-                    }
-                  >
-                    ✓ Delivered + correct code
-                  </button>
-                  <button
-                    disabled={!!busy || !canEvent}
-                    onClick={() =>
-                      action({ action: "scenario", scenario: "refused" })
-                    }
-                  >
-                    ↩ Refused at the door
-                  </button>
-                  <button
-                    disabled={!!busy || !canEvent}
-                    onClick={() =>
-                      action({ action: "scenario", scenario: "not_home" })
-                    }
-                  >
-                    ◷ Not home · attempt{" "}
-                    {Math.min(
-                      (order.events.filter((x) => x.kind === "not_home")
-                        .length || 0) + 1,
-                      2,
-                    )}
-                    /2
-                  </button>
-                  <button
-                    disabled={!!busy || !canEvent}
-                    onClick={() =>
-                      action({
-                        action: "scenario",
-                        scenario: "partial_delivery",
-                      })
-                    }
-                  >
-                    ◐ Partial delivery
-                  </button>
-                  <button
-                    disabled={!!busy || !canDefect}
-                    onClick={() => {
-                      setText(
-                        "El producto llegó roto. Adjunto una foto del daño.",
-                      );
-                      document.getElementById("message")?.focus();
-                    }}
-                  >
-                    ▧ Report defect · attach photo
-                  </button>
-                </div>
-              </section>
-              {order.events.some((x) => x.kind === "defect_reported") && (
-                <section className="review-panel">
-                  <span className="section-label">
-                    SHOP REVIEW · HUMAN APPROVAL
-                  </span>
-                  <p>
-                    Revise el reclamo y la foto adjunta antes de aprobar un
-                    reembolso. En esta demo usted representa a la tienda.
-                  </p>
-                  {order.events
-                    .filter((e) => e.photo)
-                    .map((e) => (
-                      <img
-                        key={e.id}
-                        src={e.photo}
-                        alt="Foto adjunta del reclamo de demostración"
-                        style={{
-                          display: "block",
-                          maxWidth: 240,
-                          maxHeight: 220,
-                          objectFit: "contain",
-                          marginBottom: 15,
-                        }}
-                      />
-                    ))}
-                  <label>
-                    Reembolso parcial (USD){" "}
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={refundAmount}
-                      onChange={(e) => setRefundAmount(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    className="button secondary"
-                    disabled={!!busy || !!order.refunds.length}
-                    onClick={() =>
-                      action({
-                        action: "refund",
-                        amount: Math.round(Number(refundAmount) * 100),
-                      })
-                    }
-                  >
-                    Approve sandbox refund
-                  </button>
-                </section>
+            </div>
+            <div className="selected-order-end">
+              <span className={`status-badge state-${current.state}`}>
+                <span className="tiny-dot" />
+                {stateLabels[current.state]}
+              </span>
+              {current.source === "pascal" && (
+                <a href="/api/integrations/pascal/return" className="text-link">
+                  Ver en Pascal <Icon name="northeast" size={14} />
+                </a>
               )}
+              <button
+                className="icon-button"
+                aria-label="Exportar evidencia del pedido"
+                onClick={() => downloadEvidence(current, guided)}
+              >
+                <Icon name="download" size={18} />
+              </button>
             </div>
           </div>
-          <section className="audit-panel">
-            <div className="audit-header">
-              <div>
-                <span className="section-label">PAYMENT EVIDENCE</span>
-                <h2>Every call leaves a trace.</h2>
-              </div>
-              <div>
-                <button
-                  className="text-button"
-                  disabled={!!busy}
-                  onClick={() => action({ action: "refresh" })}
-                >
-                  Refresh payment status ↻
-                </button>
-                <button
-                  className="text-button"
-                  disabled={!!busy || order.state !== "held"}
-                  onClick={() => action({ action: "reauthorize" })}
-                >
-                  Check / reauthorize hold
-                </button>
-              </div>
+          <section className="money-overview" aria-label="Estado del dinero">
+            <div>
+              <span>Total del producto</span>
+              <strong>{usd(current.total)}</strong>
+              <small>USD · Envío no incluido</small>
             </div>
-            {order.refunds.map((r) => (
-              <p key={r.id}>
-                Refund: <code>{r.id}</code> · {usd(r.amount)} · {r.status}
-              </p>
-            ))}
-            <div className="webhook-line">
-              <span
-                className={order.lastWebhook ? "live-dot" : "waiting-dot"}
-              />
-              {order.lastWebhook ? (
-                <>
-                  verification_status: <strong>SUCCESS</strong> ·{" "}
-                  {order.lastWebhook.type} · <code>{order.lastWebhook.id}</code>
-                </>
-              ) : (
-                "Verified webhook not received yet. No success is simulated."
-              )}
+            <div>
+              <span>Anticipo para crear</span>
+              <strong>{usd(amounts!.deposit)}</strong>
+              <small>
+                {amounts!.deposit
+                  ? guided
+                    ? "Cobro ilustrativo"
+                    : "Capturado"
+                  : "Pendiente de aprobación"}
+              </small>
             </div>
-            <div className="audit-calls">
-              {order.calls.map((c, i) => (
-                <details key={i}>
-                  <summary>
-                    <span
-                      className={`http-status ${c.status >= 400 ? "bad" : ""}`}
-                    >
-                      {c.status}
-                    </span>
-                    <code>
-                      {c.method} {c.path}
-                    </code>
-                    <small>{c.debugId || "no debug ID"}</small>
-                    <span>＋</span>
-                  </summary>
-                  <pre>{JSON.stringify(c, null, 2)}</pre>
-                </details>
-              ))}
+            <div>
+              <span>Saldo autorizado</span>
+              <strong>{usd(amounts!.held)}</strong>
+              <small>
+                {current.state === "voided"
+                  ? "Autorización anulada"
+                  : "Autorización con plazo limitado"}
+              </small>
             </div>
-            <p className="muted">
-              Original API responses with personal fields redacted. Request IDs
-              are deterministic; repeated money actions reuse the same
-              operation.
-            </p>
+            <div>
+              <span>
+                {amounts!.refunded ? "Importe devuelto" : "Saldo al recibir"}
+              </span>
+              <strong>{usd(amounts!.refunded || amounts!.balance)}</strong>
+              <small>
+                {amounts!.refunded
+                  ? "Reembolso parcial"
+                  : amounts!.balance
+                    ? guided
+                      ? "Cobro ilustrativo"
+                      : "Capturado"
+                    : "Pendiente de entrega"}
+              </small>
+            </div>
           </section>
+          <div className="workspace-grid">
+            <aside className="journey-nav">
+              <span className="eyebrow">EL RECORRIDO</span>
+              <ol>
+                {phases.map((phase, i) => (
+                  <li
+                    key={phase.title}
+                    className={phase.done ? "is-complete" : ""}
+                  >
+                    <span>
+                      {phase.done ? (
+                        <Icon name="check" size={13} />
+                      ) : (
+                        String(i + 1).padStart(2, "0")
+                      )}
+                    </span>
+                    <div>
+                      <strong>{phase.title}</strong>
+                      <small>{phase.description}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div className="journey-note">
+                <Icon name="shield" size={20} />
+                <h3>Lo importante, a la vista.</h3>
+                <p>
+                  {guided
+                    ? "Pruebe los desenlaces. Las reglas son las mismas que en el modo Sandbox."
+                    : "Un movimiento solo se muestra como completado después de confirmarlo con PayPal."}
+                </p>
+              </div>
+              <button className="text-link" onClick={() => setTab("evidence")}>
+                Ver la evidencia <Icon name="arrow" size={14} />
+              </button>
+            </aside>
+            <div className="workspace-main">
+              <div
+                className="workspace-tabs"
+                role="tablist"
+                aria-label="Detalle del pedido"
+              >
+                {tabs.map((item, i) => (
+                  <button
+                    key={item.id}
+                    id={`tab-${item.id}`}
+                    role="tab"
+                    aria-selected={tab === item.id}
+                    aria-controls={`panel-${item.id}`}
+                    tabIndex={tab === item.id ? 0 : -1}
+                    className={tab === item.id ? "is-selected" : ""}
+                    onClick={() => setTab(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        const next =
+                          (i + (e.key === "ArrowRight" ? 1 : 2)) % tabs.length;
+                        setTab(tabs[next].id);
+                        document
+                          .getElementById(`tab-${tabs[next].id}`)
+                          ?.focus();
+                      }
+                    }}
+                  >
+                    <Icon name={item.icon} size={16} />
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <div
+                role="tabpanel"
+                id={`panel-${tab}`}
+                aria-labelledby={`tab-${tab}`}
+              >
+                {tab === "conversation" ? (
+                  <>
+                    {awaiting && (
+                      <section className="buyer-approval">
+                        <div className="approval-icon">
+                          <Icon name="wallet" size={25} />
+                        </div>
+                        <div>
+                          <span className="eyebrow">
+                            PRIMERO, LA APROBACIÓN
+                          </span>
+                          <h2>
+                            {current.state === "awaiting_balance_approval"
+                              ? "El anticipo está listo. Falta autorizar el saldo."
+                              : "Una compra con las condiciones claras."}
+                          </h2>
+                          <p>
+                            El total es {usd(current.total)}. El anticipo de{" "}
+                            {usd(current.deposit)} financia la producción; el
+                            saldo se cobra al confirmar la entrega completa.
+                          </p>
+                          <p className="policy-disclosure">
+                            Si rechaza la entrega de un producto personalizado,
+                            se anula el saldo y se conserva el anticipo
+                            informado. Un defecto requiere revisión. Los
+                            derechos del comprador y las disputas de PayPal
+                            siguen aplicando.
+                          </p>
+                          <div className="approval-actions">
+                            {current.approvalUrl ? (
+                              <a
+                                href={current.approvalUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="button button-black"
+                              >
+                                Aprobar en PayPal Sandbox{" "}
+                                <Icon name="northeast" size={16} />
+                              </a>
+                            ) : (
+                              <button
+                                className="button button-black"
+                                disabled={!!busy}
+                                onClick={() =>
+                                  action({ action: "retry_checkout" })
+                                }
+                              >
+                                Reintentar checkout
+                              </button>
+                            )}
+                            <button
+                              className="button button-outline"
+                              disabled={!!busy}
+                              onClick={() => action({ action: "approve" })}
+                            >
+                              {busy === "approve" ? (
+                                <span className="spinner" />
+                              ) : (
+                                <Icon name="refresh" size={16} />
+                              )}{" "}
+                              Ya aprobé · comprobar
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+                    )}
+                    <div className="conversation-grid">
+                      <section className="buyer-receipt">
+                        <div className="conversation-person">
+                          <span className="person-avatar">D</span>
+                          <div>
+                            <strong>Daniela R.</strong>
+                            <small>Compradora · Chat simulado</small>
+                          </div>
+                          <Icon name="dots" size={19} />
+                        </div>
+                        <div className="buyer-messages">
+                          <div className="chat-bubble">
+                            Quisiera un regalo personalizado. ¿Cómo funciona el
+                            pago?
+                          </div>
+                          <div className="chat-bubble from-shop">
+                            El anticipo es {usd(current.deposit)}. El saldo se
+                            cobra cuando usted reciba el pedido completo.
+                          </div>
+                        </div>
+                        <div className="delivery-code">
+                          <Icon name="box" size={23} />
+                          <span>SU CÓDIGO DE ENTREGA</span>
+                          <strong>
+                            {current.code.split("").map((n, i) => (
+                              <span key={i}>{n}</span>
+                            ))}
+                          </strong>
+                          <p>
+                            Compártalo al recibir
+                            <br />
+                            el pedido completo.
+                          </p>
+                        </div>
+                        <div className="buyer-proof">
+                          <Icon name="shield" size={15} />
+                          {guided
+                            ? "Condiciones ilustradas en la demo"
+                            : "Condiciones informadas antes de aprobar"}
+                        </div>
+                      </section>
+                      <section className="courier-conversation">
+                        <div className="conversation-person">
+                          <span className="person-avatar dark-avatar">
+                            <Icon name="truck" size={18} />
+                          </span>
+                          <div>
+                            <strong>Lo que pasó en la entrega</strong>
+                            <small>
+                              Comprador o repartidor · Chat simulado
+                            </small>
+                          </div>
+                          <span className="conversation-ai">
+                            <Icon name="sparkle" size={15} /> IA
+                          </span>
+                        </div>
+                        <div className="delivery-messages" aria-live="polite">
+                          {!current.events.length ? (
+                            <div className="conversation-welcome">
+                              <Icon name="wave" size={32} />
+                              <h3>Con sus palabras.</h3>
+                              <p>
+                                “Ya entregué”, “no había nadie” o “llegó con un
+                                daño”. Cuéntenos qué ocurrió.
+                              </p>
+                              <span>
+                                Escriba un mensaje, grabe una nota o adjunte una
+                                imagen.
+                              </span>
+                            </div>
+                          ) : (
+                            current.events.slice(-3).map((event) => (
+                              <div className="delivery-message" key={event.id}>
+                                <div className="message-provenance">
+                                  <span>
+                                    {event.source === "simulated_laar"
+                                      ? "Courier simulado"
+                                      : "Mensaje recibido"}
+                                  </span>
+                                  <span>{eventLabels[event.kind]}</span>
+                                </div>
+                                <p>{event.text}</p>
+                                {event.photo && (
+                                  <img
+                                    className="message-photo"
+                                    src={event.photo}
+                                    alt={
+                                      guided
+                                        ? "Imagen sintética del defecto en la demostración"
+                                        : "Imagen adjunta a la entrega"
+                                    }
+                                  />
+                                )}
+                              </div>
+                            ))
+                          )}
+                          {busy === "message" && (
+                            <div className="thinking" role="status">
+                              <span />
+                              <span />
+                              <span /> Interpretando el mensaje…
+                            </div>
+                          )}
+                        </div>
+                        <MessageComposer
+                          busy={!!busy}
+                          code={current.code}
+                          preset={preset}
+                          onError={setError}
+                          onSend={message}
+                        />
+                      </section>
+                    </div>
+                    {ai && (
+                      <div className="ai-interpretation">
+                        <div className="ai-interpretation-label">
+                          <Icon name="sparkle" size={17} />
+                          <span>INTERPRETACIÓN DE IA</span>
+                          <code>{ai.kind}</code>
+                        </div>
+                        <p>{ai.explanation}</p>
+                        <details>
+                          <summary>
+                            Respuesta sugerida <Icon name="down" size={13} />
+                          </summary>
+                          <blockquote>{ai.reply}</blockquote>
+                          <button
+                            className="text-link"
+                            onClick={() => {
+                              navigator.clipboard
+                                .writeText(ai.reply)
+                                .then(() =>
+                                  setNotice(
+                                    "Respuesta copiada. No se envió ningún WhatsApp.",
+                                  ),
+                                )
+                                .catch(() =>
+                                  setError(
+                                    "No se pudo copiar; puede seleccionar el texto.",
+                                  ),
+                                );
+                            }}
+                          >
+                            Copiar respuesta
+                          </button>
+                        </details>
+                        <span className="model-provenance">
+                          {ai.provider} / {ai.model} · El modelo no ejecuta
+                          pagos
+                        </span>
+                      </div>
+                    )}
+                    <div className="gate-result">
+                      <span className="gate-icon">
+                        <Icon
+                          name={
+                            decision?.action === "release"
+                              ? "check"
+                              : decision?.action === "cancel"
+                                ? "undo"
+                                : decision?.action === "ask_shop"
+                                  ? "eye"
+                                  : "clock"
+                          }
+                          size={22}
+                        />
+                      </span>
+                      <div>
+                        <span className="eyebrow">REGLA DETERMINISTA</span>
+                        <h3>
+                          {decision
+                            ? {
+                                release: "Entrega confirmada. Saldo resuelto.",
+                                cancel: "Entrega rechazada. Saldo anulado.",
+                                wait: "Esperar también es una decisión.",
+                                ask_shop: "Ahora, revisa la tienda.",
+                                refund_partial:
+                                  "Reembolso aprobado por la tienda.",
+                              }[decision.action]
+                            : "La siguiente decisión empieza con evidencia."}
+                        </h3>
+                        <p>
+                          {decision?.reason ||
+                            "El mensaje, el código y el estado del pedido determinan qué puede ocurrir con el saldo."}
+                        </p>
+                        {last?.gateExplanation && (
+                          <p className="gate-ai-explanation">
+                            {last.gateExplanation.text}
+                            <small>
+                              {last.gateExplanation.provider} · Explicación de
+                              la regla
+                            </small>
+                          </p>
+                        )}
+                      </div>
+                      <span className="rule-label">
+                        {decision
+                          ? {
+                              release: "Cobrar saldo",
+                              cancel: "Anular saldo",
+                              wait: "En espera",
+                              ask_shop: "Revisar",
+                              refund_partial: "Reembolsar",
+                            }[decision.action]
+                          : "Por recibir"}
+                      </span>
+                    </div>
+                    {current.lastError && (
+                      <div className="feedback feedback-error">
+                        <Icon name="info" />
+                        <div>
+                          <p>{current.lastError}</p>
+                          <button
+                            className="text-link"
+                            onClick={() => action({ action: "retry_event" })}
+                            disabled={!!busy}
+                          >
+                            Reintentar la misma operación
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <section className="scenario-section">
+                      <div>
+                        <span className="eyebrow">
+                          OTRA ENTREGA, OTRO DESENLACE
+                        </span>
+                        <p>
+                          {guided
+                            ? "Explore las reglas con eventos e imágenes de demostración."
+                            : "Estos botones generan eventos de courier simulados. Los pagos siguen siendo llamadas reales al Sandbox."}
+                        </p>
+                      </div>
+                      <div className="scenario-grid">
+                        {(
+                          [
+                            {
+                              kind: "delivered",
+                              name: "Entrega confirmada",
+                              detail: "Código correcto",
+                              icon: "check",
+                            },
+                            {
+                              kind: "refused",
+                              name: "Rechazo en la puerta",
+                              detail: "Anular solo el saldo",
+                              icon: "undo",
+                            },
+                            {
+                              kind: "not_home",
+                              name: "No está en casa",
+                              detail: `Intento ${Math.min((current.events.filter((e) => e.kind === "not_home").length || 0) + 1, 2)} de 2`,
+                              icon: "clock",
+                            },
+                            {
+                              kind: "partial_delivery",
+                              name: "Entrega incompleta",
+                              detail: "Revisión de la tienda",
+                              icon: "box",
+                            },
+                            {
+                              kind: "defect_reported",
+                              name: "Un defecto al recibir",
+                              detail: guided
+                                ? "Imagen sintética incluida"
+                                : "Adjuntar imagen",
+                              icon: "image",
+                            },
+                          ] as {
+                            kind: EventKind;
+                            name: string;
+                            detail: string;
+                            icon: IconName;
+                          }[]
+                        ).map((s) => (
+                          <button
+                            key={s.kind}
+                            disabled={
+                              !!busy ||
+                              (!guided &&
+                                (s.kind === "defect_reported"
+                                  ? current.state !== "released"
+                                  : current.state !== "held"))
+                            }
+                            onClick={() => scenario(s.kind)}
+                          >
+                            <Icon name={s.icon} size={18} />
+                            <span>
+                              <strong>{s.name}</strong>
+                              <small>{s.detail}</small>
+                            </span>
+                            <Icon name="northeast" size={14} />
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : tab === "evidence" ? (
+                  <PaymentEvidence order={current} guided={guided} />
+                ) : (
+                  <ShopActions
+                    order={current}
+                    guided={guided}
+                    busy={!!busy}
+                    onAction={action}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
         </>
       )}
+      <div className="workspace-endnote">
+        <span>Datos ficticios. Interacciones humanas simuladas.</span>
+        <Link href="/tienda">
+          Abrir el panel de la tienda <Icon name="arrow" size={15} />
+        </Link>
+      </div>
     </main>
   );
 }

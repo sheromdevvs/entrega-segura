@@ -2,8 +2,15 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { session, checkOrigin, rateLimit } from "@/lib/security";
-import { get, save } from "@/lib/store";
-import { completeApproval, refresh, reauthorize, hold } from "@/lib/paypal";
+import { maintainOrder } from "@/lib/maintenance";
+import { get, retryNotificationsFor, notificationSummary } from "@/lib/store";
+import {
+  completeApproval,
+  refresh,
+  reauthorize,
+  hold,
+  payOut,
+} from "@/lib/paypal";
 import { parseMessage } from "@/lib/ai";
 import {
   processEvent,
@@ -23,6 +30,8 @@ const input = z.object({
     "retry_checkout",
     "retry_notifications",
     "retry_event",
+    "maintenance",
+    "payout",
   ]),
   text: z.string().max(3000).optional(),
   scenario: z
@@ -40,6 +49,9 @@ const input = z.object({
     .optional(),
   photo: z.string().max(7000000).optional(),
   amount: z.number().int().positive().optional(),
+  receiverEmail: z.email().max(254).optional(),
+  note: z.string().max(200).optional(),
+  confirmPayout: z.boolean().optional(),
 });
 async function owned(ref: string) {
   const r = get(ref);
@@ -51,7 +63,11 @@ export async function GET(
   { params }: { params: Promise<{ ref: string }> },
 ) {
   try {
-    return NextResponse.json(await owned((await params).ref));
+    const order = await owned((await params).ref);
+    return NextResponse.json({
+      ...order,
+      notifications: notificationSummary(order.ref),
+    });
   } catch {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
@@ -74,6 +90,19 @@ export async function POST(
       await notifyShop(result);
       return NextResponse.json({ order: result });
     }
+    if (body.action === "maintenance")
+      return NextResponse.json({ order: await maintainOrder(ref) });
+    if (body.action === "payout") {
+      if (!body.confirmPayout || !body.receiverEmail || !body.amount)
+        throw new Error("Confirme el destinatario Sandbox y el importe.");
+      await payOut({
+        orderRef: ref,
+        receiverEmail: body.receiverEmail,
+        amount: body.amount,
+        note: body.note || "Entrega de demostración",
+      });
+      return NextResponse.json({ order: get(ref) });
+    }
     if (body.action === "retry_event") {
       const event = r.events.find((x) => x.applied === false);
       if (!event) throw new Error("No pending delivery action");
@@ -91,7 +120,8 @@ export async function POST(
         }),
       });
     if (body.action === "retry_notifications") {
-      await flushNotifications();
+      retryNotificationsFor(ref);
+      await flushNotifications(ref);
       return NextResponse.json({ order: get(ref) });
     }
     if (body.action === "reauthorize")

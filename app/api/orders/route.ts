@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { NextResponse } from "next/server";
 import { session, checkOrigin, rateLimit } from "@/lib/security";
 import { createOrder } from "@/lib/orders";
@@ -16,8 +17,19 @@ export async function POST(req: Request) {
     checkOrigin(req);
     const owner = await session();
     rateLimit("create:" + owner, 8);
-    const body = await req.json();
-    const r = createOrder(owner, body.productId);
+    const body = z
+      .object({
+        productId: z.enum(["hoodie", "mug", "frame"]),
+        paymentStrategy: z.enum(["single", "split"]).optional(),
+      })
+      .parse(await req.json());
+    const r = createOrder(
+      owner,
+      body.productId,
+      "judge",
+      undefined,
+      body.paymentStrategy,
+    );
     return NextResponse.json(
       await hold({
         orderRef: r.ref,

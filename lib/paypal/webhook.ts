@@ -62,12 +62,20 @@ export async function handleWebhook(raw: string, headers: Headers) {
       event.resource?.supplementary_data?.related_ids?.capture_id,
       event.resource?.batch_header?.payout_batch_id,
     ].filter(Boolean);
-    const r = ids.map((id) => byPayPalId(id)).find(Boolean);
+    const senderRef = event.resource?.payout_item?.sender_item_id;
+    let bySender: ReturnType<typeof get> | undefined;
+    try {
+      if (typeof senderRef === "string") bySender = get(senderRef);
+    } catch {}
+    const r = ids.map((id) => byPayPalId(id)).find(Boolean) || bySender;
     if (r) {
       await locked(`gate:${r.ref}`, async () => {
         if (event.event_type === "CHECKOUT.ORDER.APPROVED")
           await completeApproval({ orderRef: r.ref });
-        if (event.event_type === "PAYMENT.CAPTURE.COMPLETED")
+        if (
+          event.event_type === "PAYMENT.CAPTURE.COMPLETED" ||
+          event.event_type === "PAYMENT.CAPTURE.REFUNDED"
+        )
           await refresh({ orderRef: r.ref });
         await locked(r.ref, async () => {
           const current = get(r.ref);
@@ -93,6 +101,16 @@ export async function handleWebhook(raw: string, headers: Headers) {
               if (refund.status === "COMPLETED") current.state = "refunded";
             }
           }
+          if (event.event_type.startsWith("PAYMENT.PAYOUTS"))
+            current.payout = {
+              ...current.payout,
+              lastEvent: event.event_type,
+              status:
+                event.resource?.batch_status ||
+                event.resource?.transaction_status ||
+                event.resource?.batch_header?.batch_status ||
+                current.payout?.status,
+            };
           save(current);
         });
         await notifyShop(get(r.ref));

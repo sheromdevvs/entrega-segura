@@ -19,12 +19,14 @@ export async function GET(req: Request) {
     merchantRef: r.merchantRef,
     product: r.product,
     state: r.state,
+    paymentStrategy: r.paymentStrategy || "single",
     total: r.total,
     deposit: r.deposit,
     captures: r.captures,
     refunds: r.refunds,
     lastWebhook: r.lastWebhook,
     decision: r.decisions.at(-1),
+    maintenance: r.maintenance,
     sandbox: true,
   });
 }
